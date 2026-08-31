@@ -65,6 +65,7 @@ class InputCapture:
         self._tap = None
         self._source = None
         self._active = False
+        self._seen = 0
         self._modifier_state: dict[int, bool] = {}
 
     @property
@@ -117,7 +118,10 @@ class InputCapture:
             # stop() and in the process-exit handler.
             Quartz.CGAssociateMouseAndMouseCursorPosition(False)
         self._active = True
-        log.info("forwarding input to remote")
+        log.info(
+            "forwarding input to remote (tap enabled=%s)",
+            Quartz.CGEventTapIsEnabled(self._tap),
+        )
         return True
 
     def stop(self) -> None:
@@ -130,9 +134,10 @@ class InputCapture:
         Quartz.CGAssociateMouseAndMouseCursorPosition(True)
         # Order matters: release held keys while the socket is still open.
         self.sender.disconnect()
-        log.info("stopped forwarding input")
+        log.info("stopped forwarding input (saw %d events)", self._seen)
 
     def _callback(self, proxy, event_type, event, refcon):
+        self._seen += 1
         # The system disables a tap that takes too long. Put it back only if we
         # actually want it live: we also disable the tap ourselves when idle,
         # and that fires this same notification.
@@ -187,13 +192,23 @@ class InputCapture:
                 return False
             # Ignore auto-repeat: the far side repeats on its own from the
             # held-down state, so forwarding repeats would double up.
-            if event_type == Quartz.kCGEventKeyDown and Quartz.CGEventGetIntegerValueField(
+            repeat = Quartz.CGEventGetIntegerValueField(
                 event, Quartz.kCGKeyboardEventAutorepeat
-            ):
-                return True
-            return self.sender.send_key(
-                linux_key, pressed=event_type == Quartz.kCGEventKeyDown
             )
+            if event_type == Quartz.kCGEventKeyDown and repeat:
+                log.debug("skipping auto-repeat of keycode %s", keycode)
+                return True
+            pressed = event_type == Quartz.kCGEventKeyDown
+            sent = self.sender.send_key(linux_key, pressed=pressed)
+            log.debug(
+                "key mac=%s -> linux=%s pressed=%s repeat=%s sent=%s",
+                keycode,
+                linux_key,
+                pressed,
+                repeat,
+                sent,
+            )
+            return sent
 
         if event_type == Quartz.kCGEventFlagsChanged:
             return self._forward_modifier(event)

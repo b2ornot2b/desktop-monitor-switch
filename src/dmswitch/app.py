@@ -156,22 +156,44 @@ class SwitcherDelegate(NSObject):
         # entering always means "b2omarchy's first workspace".
         if self.strip.windows:
             self.strip.windows[0].makeKeyAndOrderFront_(None)
-        self.activeSpaceChanged_(None)
+        self._reevaluate("strip-ready")
 
     # -- space transitions -------------------------------------------------
 
     def appActivationChanged_(self, notification):
         """The user moved to or from another app - possibly on another display."""
-        self.activeSpaceChanged_(None)
+        self._reevaluate(notification.name() if notification else "activation")
 
     def activeSpaceChanged_(self, notification):
+        self._reevaluate("space-change" if notification else "manual")
+
+    @objc.python_method
+    def _reevaluate(self, reason: str):
+        # objc.python_method keeps this off the Objective-C side: PyObjC would
+        # otherwise try to expose it as a zero-argument selector and refuse.
         if self.strip is None or self.strip.building:
             return
 
         workspace_id = self.strip.active_workspace_id()
+        app_active = bool(AppKit.NSApp().isActive())
+        log.debug(
+            "reevaluate (%s): workspace=%s app_active=%s engaged=%s",
+            reason,
+            workspace_id,
+            app_active,
+            self.engaged,
+        )
+
         # Both conditions matter: the right Space must be showing *and* we must
         # be the app the user is actually working in.
-        if workspace_id is None or not AppKit.NSApp().isActive():
+        if workspace_id is None or not app_active:
+            if self.engaged:
+                log.info(
+                    "releasing because %s",
+                    "the strip Space is no longer showing"
+                    if workspace_id is None
+                    else "another app became active",
+                )
             self.disengage()
             return
 
