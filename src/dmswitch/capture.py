@@ -123,13 +123,15 @@ class InputCapture:
         log.info("stopped forwarding input")
 
     def _callback(self, proxy, event_type, event, refcon):
-        # The system disables a tap that takes too long; put it straight back.
+        # The system disables a tap that takes too long. Put it back only if we
+        # actually want it live: we also disable the tap ourselves when idle,
+        # and that fires this same notification.
         if event_type in (
             Quartz.kCGEventTapDisabledByTimeout,
             Quartz.kCGEventTapDisabledByUserInput,
         ):
-            log.warning("event tap was disabled by the system; re-enabling")
-            if self._tap is not None:
+            if self._active and self._tap is not None:
+                log.warning("event tap was disabled by the system; re-enabling")
                 Quartz.CGEventTapEnable(self._tap, True)
             return event
 

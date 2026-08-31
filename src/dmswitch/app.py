@@ -11,6 +11,7 @@ private CoreGraphics Spaces calls are needed.
 from __future__ import annotations
 
 import logging
+import signal
 
 import AppKit
 import objc
@@ -25,6 +26,29 @@ log = logging.getLogger(__name__)
 
 # The shared monitor, matched by size. b2omarchy is on this display's other input.
 TARGET_SCREEN_SIZE = (3440, 1440)
+
+# Set by the signal handler, polled on the run loop. See checkForInterrupt_.
+_interrupted = False
+
+
+def _build_menu():
+    """Give the app a main menu.
+
+    Without one there is no key equivalent bound to Quit, so Cmd+Q silently
+    does nothing - and since the window is full screen its close button is
+    hidden too, which leaves no way out at all.
+    """
+    main_menu = AppKit.NSMenu.alloc().init()
+    app_item = AppKit.NSMenuItem.alloc().init()
+    main_menu.addItem_(app_item)
+
+    app_menu = AppKit.NSMenu.alloc().init()
+    app_menu.addItemWithTitle_action_keyEquivalent_("Hide dmswitch", b"hide:", "h")
+    app_menu.addItem_(AppKit.NSMenuItem.separatorItem())
+    app_menu.addItemWithTitle_action_keyEquivalent_("Quit dmswitch", b"terminate:", "q")
+    app_item.setSubmenu_(app_menu)
+
+    AppKit.NSApp().setMainMenu_(main_menu)
 
 
 def _find_target_screen():
@@ -63,6 +87,7 @@ class SwitcherDelegate(NSObject):
     # -- lifecycle ---------------------------------------------------------
 
     def applicationDidFinishLaunching_(self, notification):
+        _build_menu()
         self._build_window()
         self.capture.install()
 
@@ -102,7 +127,9 @@ class SwitcherDelegate(NSObject):
         label = AppKit.NSTextField.alloc().initWithFrame_(
             AppKit.NSMakeRect(0, frame.size.height / 2 - 40, frame.size.width, 80)
         )
-        label.setStringValue_("b2omarchy\nswipe here to hand over the monitor and input")
+        label.setStringValue_(
+            "b2omarchy\nidle\n\n⌘Q quit · ⌃⌥⌘⎋ panic · swipe back to return"
+        )
         label.setAlignment_(AppKit.NSTextAlignmentCenter)
         label.setBezeled_(False)
         label.setDrawsBackground_(False)
@@ -178,7 +205,24 @@ class SwitcherDelegate(NSObject):
 
     def _set_status(self, text: str):
         if self.status_label is not None:
-            self.status_label.setStringValue_(f"b2omarchy\n{text}")
+            self.status_label.setStringValue_(
+                f"b2omarchy\n{text}\n\n⌘Q quit · ⌃⌥⌘⎋ panic · swipe back to return"
+            )
+
+    # -- signal handling ---------------------------------------------------
+
+    def checkForInterrupt_(self, timer):
+        """Poll the flag set by the SIGINT/SIGTERM handler.
+
+        Python only runs signal handlers between bytecodes, and the Cocoa run
+        loop sits in C, so Ctrl+C would otherwise never be noticed. This timer
+        gives the interpreter a moment to breathe, and the handler itself just
+        sets a flag rather than calling into AppKit from signal context.
+        """
+        if _interrupted:
+            log.info("interrupted; shutting down")
+            self.disengage()
+            AppKit.NSApp().terminate_(None)
 
 
 def run(config: Config | None = None) -> int:
@@ -187,9 +231,22 @@ def run(config: Config | None = None) -> int:
     app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
     delegate = SwitcherDelegate.alloc().initWithConfig_(config)
     app.setDelegate_(delegate)
+
+    def _handle_signal(signum, _frame):
+        global _interrupted
+        _interrupted = True
+
+    signal.signal(signal.SIGINT, _handle_signal)
+    signal.signal(signal.SIGTERM, _handle_signal)
+
+    # Wakes the interpreter often enough for the handler above to be seen.
+    AppKit.NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+        0.25, delegate, b"checkForInterrupt:", None, True
+    )
+
     app.activateIgnoringOtherApps_(True)
     try:
         app.run()
-    except KeyboardInterrupt:
+    finally:
         delegate.disengage()
     return 0
