@@ -65,9 +65,26 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         return _check(config)
 
+    from . import single_instance
+
+    acquired, other_pid = single_instance.acquire()
+    if not acquired:
+        where = f" (pid {other_pid})" if other_pid else ""
+        print(
+            f"dmswitch is already running{where}.\n"
+            "Running two copies gives you duplicate Spaces and event taps that\n"
+            "fight over your keystrokes. Quit the other one first, or:\n"
+            f"    kill {other_pid or '<pid>'}",
+            file=sys.stderr,
+        )
+        return 1
+
     from .app import run
 
-    return run(config)
+    try:
+        return run(config)
+    finally:
+        single_instance.release()
 
 
 def _check(config: Config) -> int:
