@@ -61,6 +61,9 @@ uv venv && uv pip install -e ".[dev]"
 .venv/bin/python -m dmswitch
 ```
 
+Use `--no-forward` for a first run: it reports Space transitions without
+capturing input, so it cannot take over your keyboard.
+
 `--check` confirms the receiver is reachable, that input access is granted, and
 that `betterdisplaycli` is on PATH.
 
