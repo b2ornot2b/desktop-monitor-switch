@@ -27,6 +27,23 @@ from Foundation import NSObject
 log = logging.getLogger(__name__)
 
 
+def _same_screen(a, b) -> bool:
+    """Whether two NSScreens are the same display.
+
+    Compared by frame rather than identity: PyObjC hands back a fresh proxy
+    object for the same display each time it is asked, so ``is`` is never true.
+    """
+    if a is None or b is None:
+        return a is b
+    fa, fb = a.frame(), b.frame()
+    return (
+        fa.origin.x == fb.origin.x
+        and fa.origin.y == fb.origin.y
+        and fa.size.width == fb.size.width
+        and fa.size.height == fb.size.height
+    )
+
+
 class StripWindowDelegate(NSObject):
     """Reports when a window has finished becoming its own Space."""
 
@@ -87,13 +104,20 @@ class WorkspaceStrip:
 
     def _make_window(self, workspace_id: int):
         frame = self.screen.frame()
+        # initWithContentRect:...screen: measures the rect from the *screen's*
+        # origin, not the global one. Passing a global frame therefore doubles
+        # the offset on any display that is not at (0,0), leaving the window
+        # hanging off the side - and full screen then lands on whichever
+        # display holds most of it, which may be the wrong one. Build it at the
+        # origin and position it afterwards, where coordinates are global.
         window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_screen_(
-            frame,
+            AppKit.NSMakeRect(0, 0, frame.size.width, frame.size.height),
             AppKit.NSWindowStyleMaskTitled | AppKit.NSWindowStyleMaskFullSizeContentView,
             AppKit.NSBackingStoreBuffered,
             False,
             self.screen,
         )
+        window.setFrame_display_(frame, False)
         window.setTitle_(f"b2omarchy · workspace {workspace_id}")
         window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorFullScreenPrimary)
         window.setTitlebarAppearsTransparent_(True)
@@ -133,6 +157,22 @@ class WorkspaceStrip:
         window.toggleFullScreen_(None)
 
     def _window_entered_full_screen(self, window) -> None:
+        # Worth logging: a Space landing on the wrong display is invisible from
+        # the app's point of view but very obvious to the person using it.
+        landed = window.screen()
+        if landed is not None and not _same_screen(landed, self.screen):
+            log.error(
+                "workspace %s Space opened on %s, expected %s",
+                window.identifier(),
+                landed.localizedName(),
+                self.screen.localizedName(),
+            )
+        else:
+            log.debug(
+                "workspace %s Space is on %s",
+                window.identifier(),
+                landed.localizedName() if landed else "?",
+            )
         if self._pending and window is self._pending[0]:
             self._pending.pop(0)
             self._enter_next_full_screen()
