@@ -61,6 +61,9 @@ uv venv && uv pip install -e ".[dev]"
 .venv/bin/python -m dmswitch
 ```
 
+Use `--no-forward` for a first run: it reports Space transitions without
+capturing input, so it cannot take over your keyboard.
+
 `--check` confirms the receiver is reachable, that input access is granted, and
 that `betterdisplaycli` is on PATH.
 
@@ -72,6 +75,8 @@ System Settings › Privacy & Security.
 
 Handing your only keyboard to another machine deserves a way back:
 
+- **Quit** — `Cmd+Q`, or `Ctrl+C` in the launching terminal. Both disengage
+  cleanly, restoring the monitor and releasing any held keys.
 - **Panic key** — `Ctrl+Option+Cmd+Escape` immediately stops forwarding and
   returns the monitor. It is never suppressed or forwarded.
 - **Swipe out** — gestures are never captured, so the trackpad always works to
