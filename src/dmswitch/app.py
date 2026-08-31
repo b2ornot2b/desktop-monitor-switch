@@ -179,6 +179,16 @@ class SwitcherDelegate(NSObject):
         else:
             log.info("input forwarding disabled; not touching the keyboard or trackpad")
 
+        # b2omarchy's output sleeps while the monitor is showing this Mac, so
+        # wake it before handing the monitor over - otherwise the input
+        # switches to a display that is not sending a picture.
+        woken = self.control.wake()
+        if not woken.get("ok"):
+            log.warning(
+                "could not wake b2omarchy's output (%s); the monitor may show nothing",
+                woken.get("error"),
+            )
+
         if not self.monitor.to_remote():
             # Do not strand the user looking at b2umini with a dead keyboard.
             log.error("monitor switch failed; backing out of forwarding")

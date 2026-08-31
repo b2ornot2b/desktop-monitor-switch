@@ -150,6 +150,52 @@ class Hyprland:
             "active_monitor": active.get("monitor"),
         }
 
+    def dpms_on(self) -> bool | None:
+        """Whether the shared monitor's output is awake, or None if unknown."""
+        out = self._run(["monitors", "-j"])
+        if not out:
+            return None
+        try:
+            for m in json.loads(out):
+                if m.get("name") == self.monitor:
+                    return bool(m.get("dpmsStatus"))
+        except (ValueError, KeyError):
+            return None
+        return None
+
+    def wake(self) -> dict:
+        """Make sure the shared monitor's output is awake.
+
+        The output sleeps while the monitor is showing the other machine, so
+        switching the monitor back to it would otherwise land on a blank input.
+
+        Careful here: ``hl.dsp.dpms`` *toggles*. The ``on`` key is accepted but
+        ignored, so calling it unconditionally would blank the screen on every
+        second engage. Read the state first and only toggle when actually
+        asleep, which makes this idempotent from the caller's point of view.
+        """
+        if not self.signature():
+            return {"ok": False, "error": "no hyprland instance for monitor"}
+
+        state = self.dpms_on()
+        if state is True:
+            return {"ok": True, "dpms": True, "changed": False}
+
+        self._run(["dispatch", "hl.dsp.dpms({on=true})"])
+        state = self.dpms_on()
+        if state is not True:
+            # One retry: the toggle can race with the output coming back after
+            # the monitor switches its input.
+            self._run(["dispatch", "hl.dsp.dpms({on=true})"])
+            state = self.dpms_on()
+
+        return {
+            "ok": state is True,
+            "dpms": state,
+            "changed": True,
+            "error": None if state is True else "could not wake the output",
+        }
+
     def focus(self, workspace_id: int) -> dict:
         """Switch the shared monitor to a workspace.
 
@@ -301,6 +347,11 @@ def dispatch_control(line: bytes, hypr: Hyprland) -> dict:
             return {"ok": False, "error": "focus needs an integer id"}
         log.info("focusing workspace %s", workspace_id)
         return hypr.focus(workspace_id)
+    if command == "wake":
+        result = hypr.wake()
+        if result.get("changed"):
+            log.info("woke the %s output (dpms now %s)", hypr.monitor, result.get("dpms"))
+        return result
     if command == "ping":
         return {"ok": True}
     return {"ok": False, "error": f"unknown command {command!r}"}

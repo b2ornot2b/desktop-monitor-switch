@@ -98,6 +98,10 @@ class ControlClient:
         """Workspace ids on the shared monitor, and which is active."""
         return self.request({"cmd": "workspaces"})
 
+    def wake(self) -> dict:
+        """Wake b2omarchy's output so the monitor has a signal to show."""
+        return self.request({"cmd": "wake"})
+
     # -- asynchronous focus ------------------------------------------------
 
     def start_worker(self) -> None:

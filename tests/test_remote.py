@@ -129,3 +129,11 @@ def test_rapid_swipes_collapse_to_the_last_workspace(client, server):
     assert focus_requests[-1]["id"] == 5
     # The whole point of coalescing: we must not walk through every workspace.
     assert len(focus_requests) < 5
+
+
+def test_wake_is_sent_before_handing_over_the_monitor(server):
+    """b2omarchy's output sleeps while the Mac owns the monitor."""
+    client = ControlClient(RemoteConfig(host="127.0.0.1", port=server.port))
+    client.wake()
+    client.close()
+    assert any(r.get("cmd") == "wake" for r in server.requests)
