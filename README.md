@@ -7,11 +7,11 @@ driving that machine instead. Swiping back reverses both.
 ```
    b2umini (macOS)                              b2omarchy (Arch/Hyprland)
    ┌──────────────────────────┐                 ┌──────────────────────────┐
-   │ dmswitch                 │                 │ dmswitch_receiver.py     │
-   │  ├─ full-screen window   │   TCP :24810    │  ├─ held-key watchdog    │
-   │  │   on the last Space   │  input_event    │  └─ relays to ydotoold   │
-   │  ├─ CGEventTap capture   │ ──────────────► │            │             │
-   │  └─ betterdisplaycli     │   (24B records) │            ▼             │
+   │ dmswitch                 │   TCP :24810    │ dmswitch_receiver.py     │
+   │  ├─ a Space per omarchy  │  EVT: events    │  ├─ held-key watchdog    │
+   │  │   workspace           │ ──────────────► │  ├─ relays to ydotoold   │
+   │  ├─ CGEventTap capture   │  CTL: json      │  └─ hyprctl workspaces   │
+   │  └─ betterdisplaycli     │ ◄──────────────►│            ▼             │
    └───────────┬──────────────┘                 │      /dev/uinput         │
                │ DDC                            └──────────────────────────┘
                ▼
@@ -19,6 +19,29 @@ driving that machine instead. Swiping back reverses both.
 ```
 
 ## How it works
+
+### One Space per workspace
+
+b2omarchy's workspaces are mirrored as macOS Spaces, so the two machines read
+as a single continuous strip:
+
+```
+[mac 1] [mac 2] … [mac last] │ [ws1] [ws2] [ws3]
+                             ↑ swipe left from ws1 lands back on the Mac
+```
+
+Swiping is left entirely to macOS. The app just notices which of its windows is
+on the active Space and tells b2omarchy to switch to the matching workspace.
+That is deliberate: macOS handles the Space-switch gesture from the raw touch
+stream, so an event tap can observe it but **cannot suppress it**. Rather than
+fight that, the gesture is given something useful to switch between — and
+"swipe left off the front to leave b2omarchy" then works for free.
+
+The strip is rebuilt to match however many workspaces b2omarchy has, resynced
+whenever you leave it. (Resyncing while you are inside would yank you sideways
+mid-use, so it waits.)
+
+### Engaging
 
 The app puts a full-screen window on its own Space. macOS reports Space changes
 through `NSWorkspaceActiveSpaceDidChangeNotification`, and `NSWindow.isOnActiveSpace`
@@ -31,8 +54,7 @@ When the Space becomes active:
 2. A CGEventTap starts capturing keyboard and pointer events, *suppressing* them
    locally and sending them to b2omarchy as raw Linux `input_event` records.
 
-Leaving the Space reverses both. Gesture events are deliberately **not**
-captured, so a trackpad swipe can always take you back out.
+Leaving the strip reverses both.
 
 ## Setup
 
@@ -79,8 +101,8 @@ Handing your only keyboard to another machine deserves a way back:
   cleanly, restoring the monitor and releasing any held keys.
 - **Panic key** — `Ctrl+Option+Cmd+Escape` immediately stops forwarding and
   returns the monitor. It is never suppressed or forwarded.
-- **Swipe out** — gestures are never captured, so the trackpad always works to
-  leave the Space.
+- **Swipe out** — gestures are never captured, so the trackpad always works;
+  swiping left off the front of the strip leaves b2omarchy.
 - **Held-key release** — both ends track what is held down. On disconnect,
   crash, or sleep, the receiver releases every held key, so b2omarchy is never
   left with a stuck modifier it has no keyboard to clear.
@@ -102,11 +124,12 @@ Defaults match this setup. Override in `~/.config/dmswitch/config.json`
 The `--vcp=inputSelectAlt` symbolic form is required for this display; raw hex
 VCP codes fail *silently* on it.
 
-## Not yet implemented
+## Known limitations
 
-Forwarding the trackpad's desktop-switch gesture onto b2omarchy (so a forward
-swipe past the last Space changes workspace there). That needs low-level
-multitouch capture rather than a CGEventTap.
+- Workspaces are resynced when you leave the strip, so a workspace created on
+  b2omarchy while you are inside it is not reachable until you leave and return.
+- Reordering the Spaces in Mission Control still maps correctly (mapping is by
+  window, not position) but the left-to-right order stops matching b2omarchy's.
 
 ## Development
 

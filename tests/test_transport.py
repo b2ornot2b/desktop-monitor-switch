@@ -27,6 +27,7 @@ class FakeReceiver:
         self.sock.listen(1)
         self.port = self.sock.getsockname()[1]
         self.received = bytearray()
+        self.handshake = None
         self._done = threading.Event()
         self._thread = threading.Thread(target=self._serve, daemon=True)
         self._thread.start()
@@ -34,6 +35,8 @@ class FakeReceiver:
     def _serve(self):
         conn, _ = self.sock.accept()
         with conn:
+            # The sender identifies the channel before streaming events.
+            self.handshake = conn.recv(4)
             while not self._done.is_set():
                 try:
                     chunk = conn.recv(4096)
@@ -161,3 +164,11 @@ def test_movement_and_scroll_are_forwarded(sender, receiver):
     assert (evdev.EV_REL, evdev.REL_X, 4) in events
     assert (evdev.EV_REL, evdev.REL_Y, -2) in events
     assert (evdev.EV_REL, evdev.REL_WHEEL, 1) in events
+
+
+def test_sender_identifies_itself_as_an_event_channel(sender, receiver):
+    # The receiver multiplexes input and control on one port, so the sender
+    # has to say which it is before streaming.
+    sender.send_key(evdev.KEY_ENTER, pressed=True)
+    _settle()
+    assert receiver.handshake == b"EVT\n"

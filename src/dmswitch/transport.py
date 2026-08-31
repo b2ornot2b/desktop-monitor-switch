@@ -17,6 +17,10 @@ from .config import RemoteConfig
 
 log = logging.getLogger(__name__)
 
+# Tells the receiver this connection carries input events rather than control
+# messages; both share a port.
+HANDSHAKE = b"EVT\n"
+
 
 class EventSender:
     """A reconnecting TCP client that also tracks what it has pressed.
@@ -46,6 +50,7 @@ class EventSender:
                     timeout=self.config.connect_timeout,
                 )
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                sock.sendall(HANDSHAKE)
                 sock.settimeout(None)
             except OSError as exc:
                 log.error("cannot reach receiver at %s:%s (%s)", self.config.host, self.config.port, exc)
