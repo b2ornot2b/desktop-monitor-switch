@@ -1,11 +1,13 @@
-"""The macOS app: a full-screen window that owns the last Space.
+"""The macOS app: a strip of Spaces that mirrors b2omarchy's workspaces.
 
-When that Space becomes active the monitor flips to b2omarchy and keyboard and
-trackpad start forwarding; when it stops being active both revert.
+Entering any Space in the strip hands the shared monitor and this Mac's
+keyboard and trackpad to b2omarchy. Swiping within the strip switches
+b2omarchy's workspace. Swiping left off the front of the strip lands back on
+the Mac's own Spaces, which releases both.
 
-Space membership is detected with ``NSWindow.isOnActiveSpace`` together with
-NSWorkspace's active-space-change notification. Both are public API, so no
-private CoreGraphics Spaces calls are needed.
+Space membership is read with ``NSWindow.isOnActiveSpace`` alongside
+NSWorkspace's active-space notification: both public API, so no private
+CoreGraphics Spaces calls are needed.
 """
 
 from __future__ import annotations
@@ -20,6 +22,8 @@ from Foundation import NSObject
 from .capture import InputCapture
 from .config import Config
 from .monitor import MonitorSwitcher
+from .remote import ControlClient
+from .spaces import WorkspaceStrip
 from .transport import EventSender
 
 log = logging.getLogger(__name__)
@@ -35,8 +39,8 @@ def _build_menu():
     """Give the app a main menu.
 
     Without one there is no key equivalent bound to Quit, so Cmd+Q silently
-    does nothing - and since the window is full screen its close button is
-    hidden too, which leaves no way out at all.
+    does nothing - and since the windows are full screen their close buttons
+    are hidden too, which leaves no way out at all.
     """
     main_menu = AppKit.NSMenu.alloc().init()
     app_item = AppKit.NSMenuItem.alloc().init()
@@ -64,7 +68,7 @@ def _find_target_screen():
 
 
 class SwitcherDelegate(NSObject):
-    """Owns the window and drives the switch in and switch out transitions."""
+    """Owns the strip and drives the switch in and switch out transitions."""
 
     def initWithConfig_(self, config: Config):
         self = objc.super(SwitcherDelegate, self).init()
@@ -72,15 +76,16 @@ class SwitcherDelegate(NSObject):
             return None
         self.config = config
         self.sender = EventSender(config.remote)
+        self.control = ControlClient(config.remote)
         self.capture = InputCapture(
             self.sender,
             scroll_divisor=config.scroll_divisor,
             on_panic=self.panic,
         )
         self.monitor = MonitorSwitcher(config.monitor, enabled=config.switch_monitor)
-        self.window = None
-        self.status_label = None
+        self.strip = None
         self.engaged = False
+        self.current_workspace = None
         self._panicked = False
         return self
 
@@ -88,8 +93,9 @@ class SwitcherDelegate(NSObject):
 
     def applicationDidFinishLaunching_(self, notification):
         _build_menu()
-        self._build_window()
         self.capture.install()
+        self.strip = WorkspaceStrip(_find_target_screen(), on_ready=self._strip_ready)
+        self._rebuild_strip()
 
         AppKit.NSWorkspace.sharedWorkspace().notificationCenter().addObserver_selector_name_object_(
             self,
@@ -98,78 +104,76 @@ class SwitcherDelegate(NSObject):
             None,
         )
         log.info("watching for Space changes")
-        # The window may already be on the active Space at launch.
-        self.activeSpaceChanged_(None)
 
     def applicationWillTerminate_(self, notification):
         self.disengage()
+        self.control.close()
+        if self.strip is not None:
+            self.strip.teardown()
 
     def applicationShouldTerminateAfterLastWindowClosed_(self, sender):
-        return True
+        return False
 
-    def _build_window(self):
-        screen = _find_target_screen()
-        frame = screen.frame()
-        window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_screen_(
-            frame,
-            AppKit.NSWindowStyleMaskTitled | AppKit.NSWindowStyleMaskFullSizeContentView,
-            AppKit.NSBackingStoreBuffered,
-            False,
-            screen,
-        )
-        window.setTitle_("b2omarchy")
-        window.setCollectionBehavior_(
-            AppKit.NSWindowCollectionBehaviorFullScreenPrimary
-        )
-        window.setTitlebarAppearsTransparent_(True)
-        window.setBackgroundColor_(AppKit.NSColor.blackColor())
+    # -- strip management --------------------------------------------------
 
-        label = AppKit.NSTextField.alloc().initWithFrame_(
-            AppKit.NSMakeRect(0, frame.size.height / 2 - 40, frame.size.width, 80)
-        )
-        label.setStringValue_(
-            "b2omarchy\nidle\n\n⌘Q quit · ⌃⌥⌘⎋ panic · swipe back to return"
-        )
-        label.setAlignment_(AppKit.NSTextAlignmentCenter)
-        label.setBezeled_(False)
-        label.setDrawsBackground_(False)
-        label.setEditable_(False)
-        label.setSelectable_(False)
-        label.setTextColor_(AppKit.NSColor.secondaryLabelColor())
-        label.setFont_(AppKit.NSFont.systemFontOfSize_(28))
-        window.contentView().addSubview_(label)
-        self.status_label = label
+    def _rebuild_strip(self):
+        """Match the strip to whatever workspaces b2omarchy currently has."""
+        state = self.control.workspaces()
+        if not state.get("ok"):
+            log.error(
+                "could not read b2omarchy's workspaces (%s); using a single Space",
+                state.get("error"),
+            )
+            workspace_ids = [1]
+        else:
+            workspace_ids = state.get("workspaces") or [1]
+            log.info(
+                "b2omarchy has workspaces %s on %s",
+                workspace_ids,
+                state.get("monitor"),
+            )
 
-        window.makeKeyAndOrderFront_(None)
-        # Its own full-screen Space, which is the Space we then watch for.
-        window.toggleFullScreen_(None)
-        self.window = window
+        if self.strip.matches(workspace_ids) and self.strip.windows:
+            return
+        self.strip.build(workspace_ids)
+
+    def _strip_ready(self):
+        # Building leaves us on the last Space created, which would drop the
+        # user at the far end of the strip. Start at the front instead, so
+        # entering always means "b2omarchy's first workspace".
+        if self.strip.windows:
+            self.strip.windows[0].makeKeyAndOrderFront_(None)
+        self.activeSpaceChanged_(None)
 
     # -- space transitions -------------------------------------------------
 
     def activeSpaceChanged_(self, notification):
-        if self.window is None:
+        if self.strip is None or self.strip.building:
             return
-        on_active = bool(self.window.isOnActiveSpace())
-        log.debug("active space changed; ours is active: %s", on_active)
-        if on_active:
-            self.engage()
-        else:
+
+        workspace_id = self.strip.active_workspace_id()
+        if workspace_id is None:
             self.disengage()
+            return
+
+        self.engage()
+        if self.engaged and workspace_id != self.current_workspace:
+            log.info("strip Space -> b2omarchy workspace %s", workspace_id)
+            self.current_workspace = workspace_id
+            self.control.focus_async(workspace_id)
 
     def engage(self):
-        """Our Space became active: monitor and input follow."""
+        """A strip Space became active: monitor and input follow."""
         if self.engaged:
             return
-        # A panic stays in force until the user leaves the Space and comes back.
+        # A panic stays in force until the user leaves the strip and returns.
         if self._panicked:
-            log.info("still disengaged after panic; leave and re-enter the Space to resume")
+            log.info("still disengaged after panic; leave the strip and return to resume")
             return
 
         log.info("engaging")
         if self.config.forward_input:
             if not self.capture.start():
-                self._set_status("could not forward input - check the receiver and permissions")
                 log.error("input capture did not start; leaving the monitor alone")
                 return
         else:
@@ -179,35 +183,28 @@ class SwitcherDelegate(NSObject):
             # Do not strand the user looking at b2umini with a dead keyboard.
             log.error("monitor switch failed; backing out of forwarding")
             self.capture.stop()
-            self._set_status("monitor switch failed")
             return
 
         self.engaged = True
-        self._set_status(
-            "forwarding to b2omarchy" if self.config.forward_input else "engaged (input forwarding off)"
-        )
 
     def disengage(self):
-        """Left our Space (or shutting down): put everything back."""
+        """Left the strip (or shutting down): put everything back."""
         if not self.engaged:
             return
         log.info("disengaging")
         self.capture.stop()
         self.monitor.to_local()
         self.engaged = False
-        self._set_status("idle")
+        self.current_workspace = None
+        # Safe to resync now that we are outside the strip: adding or removing
+        # a Space while the user is inside it would yank them sideways.
+        if self.strip is not None and not self.strip.building:
+            self._rebuild_strip()
 
     def panic(self):
         """Escape hatch: drop input forwarding and give the monitor back now."""
         self._panicked = True
         self.disengage()
-        self._set_status("panic - forwarding released")
-
-    def _set_status(self, text: str):
-        if self.status_label is not None:
-            self.status_label.setStringValue_(
-                f"b2omarchy\n{text}\n\n⌘Q quit · ⌃⌥⌘⎋ panic · swipe back to return"
-            )
 
     # -- signal handling ---------------------------------------------------
 
@@ -221,7 +218,6 @@ class SwitcherDelegate(NSObject):
         """
         if _interrupted:
             log.info("interrupted; shutting down")
-            self.disengage()
             AppKit.NSApp().terminate_(None)
 
 
@@ -249,4 +245,5 @@ def run(config: Config | None = None) -> int:
         app.run()
     finally:
         delegate.disengage()
+        delegate.control.close()
     return 0
