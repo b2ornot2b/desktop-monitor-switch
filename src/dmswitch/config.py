@@ -46,6 +46,10 @@ class Config:
     # useful when testing forwarding on its own.
     switch_monitor: bool = True
 
+    # Capture and forward keyboard/pointer input. Turning this off leaves the
+    # Mac's input alone entirely, which makes a first run safe to observe.
+    forward_input: bool = True
+
     # Scroll wheel detents per macOS scroll unit.
     scroll_divisor: float = 3.0
 
@@ -59,6 +63,7 @@ class Config:
             monitor=MonitorConfig(**raw.get("monitor", {})),
             remote=RemoteConfig(**raw.get("remote", {})),
             switch_monitor=raw.get("switch_monitor", True),
+            forward_input=raw.get("forward_input", True),
             scroll_divisor=raw.get("scroll_divisor", 3.0),
         )
 

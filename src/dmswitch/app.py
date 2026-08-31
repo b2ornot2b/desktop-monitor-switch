@@ -140,10 +140,13 @@ class SwitcherDelegate(NSObject):
             return
 
         log.info("engaging")
-        if not self.capture.start():
-            self._set_status("could not forward input - check the receiver and permissions")
-            log.error("input capture did not start; leaving the monitor alone")
-            return
+        if self.config.forward_input:
+            if not self.capture.start():
+                self._set_status("could not forward input - check the receiver and permissions")
+                log.error("input capture did not start; leaving the monitor alone")
+                return
+        else:
+            log.info("input forwarding disabled; not touching the keyboard or trackpad")
 
         if not self.monitor.to_remote():
             # Do not strand the user looking at b2umini with a dead keyboard.
@@ -153,7 +156,9 @@ class SwitcherDelegate(NSObject):
             return
 
         self.engaged = True
-        self._set_status("forwarding to b2omarchy")
+        self._set_status(
+            "forwarding to b2omarchy" if self.config.forward_input else "engaged (input forwarding off)"
+        )
 
     def disengage(self):
         """Left our Space (or shutting down): put everything back."""

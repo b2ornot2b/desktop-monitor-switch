@@ -21,6 +21,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="forward input only, leave the monitor input alone (useful when testing)",
     )
+    parser.add_argument(
+        "--no-forward",
+        action="store_true",
+        help="do not capture or forward input; just report Space transitions. "
+        "Recommended for a first run, since it cannot take over your keyboard.",
+    )
     parser.add_argument("--host", help="override the receiver host")
     parser.add_argument("--port", type=int, help="override the receiver port")
     parser.add_argument(
@@ -44,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
     config = Config.load()
     if args.no_monitor_switch:
         config.switch_monitor = False
+    if args.no_forward:
+        config.forward_input = False
     if args.host:
         config.remote.host = args.host
     if args.port:
