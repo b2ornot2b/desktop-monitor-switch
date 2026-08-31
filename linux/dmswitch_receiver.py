@@ -33,6 +33,7 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 EVENT_FORMAT = "llHHi"
@@ -231,11 +232,16 @@ class Hyprland:
 
 
 class YdotoolSink:
-    """Relays packed input_event records into ydotoold."""
+    """Relays packed input_event records into ydotoold.
+
+    Shared between connection threads, so sends are serialised: interleaving
+    halves of two records would desynchronise the stream.
+    """
 
     def __init__(self, path: str):
         self.path = path
         self._sock: socket.socket | None = None
+        self._lock = threading.Lock()
 
     def connect(self) -> None:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
@@ -244,10 +250,11 @@ class YdotoolSink:
         log.info("connected to ydotoold at %s", self.path)
 
     def send(self, record: bytes) -> None:
-        if self._sock is None:
-            self.connect()
-        assert self._sock is not None
-        self._sock.send(record)
+        with self._lock:
+            if self._sock is None:
+                self.connect()
+            assert self._sock is not None
+            self._sock.send(record)
 
     def close(self) -> None:
         if self._sock is not None:
@@ -380,14 +387,7 @@ def serve(host: str, port: int, socket_path: str, monitor: str) -> int:
     listener.listen(4)
     log.info("listening on %s:%s (monitor %s)", host, port, monitor)
 
-    while True:
-        try:
-            conn, addr = listener.accept()
-        except KeyboardInterrupt:
-            log.info("shutting down")
-            break
-
-        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+    def serve_connection(conn: socket.socket, addr) -> None:
         try:
             handshake = _recv_exactly(conn, HANDSHAKE_SIZE)
             if handshake == HANDSHAKE_EVENTS:
@@ -404,6 +404,24 @@ def serve(host: str, port: int, socket_path: str, monitor: str) -> int:
             log.warning("connection failed: %s", exc)
         finally:
             conn.close()
+
+    while True:
+        try:
+            conn, addr = listener.accept()
+        except KeyboardInterrupt:
+            log.info("shutting down")
+            break
+
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        # A thread per connection, because both channels are long lived: the
+        # control client holds its connection open for the whole session, so
+        # handling connections in turn would leave the event stream sitting
+        # unaccepted in the backlog. The sender still connects successfully and
+        # its writes still succeed into the socket buffer, so input just
+        # vanishes with no error anywhere - which is exactly what happened.
+        threading.Thread(
+            target=serve_connection, args=(conn, addr), daemon=True
+        ).start()
 
     sink.close()
     listener.close()
