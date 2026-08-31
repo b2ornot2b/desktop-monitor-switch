@@ -51,10 +51,17 @@ for _event in _CAPTURED_EVENTS:
 class InputCapture:
     """Owns the event tap and translates each event into evdev records."""
 
-    def __init__(self, sender: EventSender, scroll_divisor: float = 3.0, on_panic=None):
+    def __init__(
+        self,
+        sender: EventSender,
+        scroll_divisor: float = 3.0,
+        on_panic=None,
+        freeze_local_cursor: bool = False,
+    ):
         self.sender = sender
         self.scroll_divisor = scroll_divisor
         self.on_panic = on_panic
+        self.freeze_local_cursor = freeze_local_cursor
         self._tap = None
         self._source = None
         self._active = False
@@ -104,9 +111,11 @@ class InputCapture:
 
         self._modifier_state.clear()
         Quartz.CGEventTapEnable(self._tap, True)
-        # Detach the on-screen cursor from mouse movement. Deltas still arrive,
-        # so b2omarchy sees the motion while the local pointer stays put.
-        Quartz.CGAssociateMouseAndMouseCursorPosition(False)
+        if self.freeze_local_cursor:
+            # Detaches the on-screen cursor from mouse movement. This is
+            # global state, so it is always paired with the restore in
+            # stop() and in the process-exit handler.
+            Quartz.CGAssociateMouseAndMouseCursorPosition(False)
         self._active = True
         log.info("forwarding input to remote")
         return True
@@ -117,6 +126,7 @@ class InputCapture:
         self._active = False
         if self._tap is not None:
             Quartz.CGEventTapEnable(self._tap, False)
+        # Unconditional: cheap, and leaving it unset strands the cursor.
         Quartz.CGAssociateMouseAndMouseCursorPosition(True)
         # Order matters: release held keys while the socket is still open.
         self.sender.disconnect()

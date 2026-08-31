@@ -81,6 +81,7 @@ class SwitcherDelegate(NSObject):
             self.sender,
             scroll_divisor=config.scroll_divisor,
             on_panic=self.panic,
+            freeze_local_cursor=config.freeze_local_cursor,
         )
         self.monitor = MonitorSwitcher(config.monitor, enabled=config.switch_monitor)
         self.strip = None
@@ -103,7 +104,19 @@ class SwitcherDelegate(NSObject):
             AppKit.NSWorkspaceActiveSpaceDidChangeNotification,
             None,
         )
-        log.info("watching for Space changes")
+        # Space membership alone is not enough to know the user is here. With
+        # "Displays have separate Spaces" each display keeps its own active
+        # Space, so a strip Space can stay frontmost on the shared monitor
+        # while the user works on the other display - and holding their
+        # keyboard hostage in that state is exactly the wrong thing to do.
+        centre = AppKit.NSNotificationCenter.defaultCenter()
+        centre.addObserver_selector_name_object_(
+            self, b"appActivationChanged:", AppKit.NSApplicationDidResignActiveNotification, None
+        )
+        centre.addObserver_selector_name_object_(
+            self, b"appActivationChanged:", AppKit.NSApplicationDidBecomeActiveNotification, None
+        )
+        log.info("watching for Space and activation changes")
 
     def applicationWillTerminate_(self, notification):
         self.disengage()
@@ -147,12 +160,18 @@ class SwitcherDelegate(NSObject):
 
     # -- space transitions -------------------------------------------------
 
+    def appActivationChanged_(self, notification):
+        """The user moved to or from another app - possibly on another display."""
+        self.activeSpaceChanged_(None)
+
     def activeSpaceChanged_(self, notification):
         if self.strip is None or self.strip.building:
             return
 
         workspace_id = self.strip.active_workspace_id()
-        if workspace_id is None:
+        # Both conditions matter: the right Space must be showing *and* we must
+        # be the app the user is actually working in.
+        if workspace_id is None or not AppKit.NSApp().isActive():
             self.disengage()
             return
 

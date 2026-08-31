@@ -53,6 +53,12 @@ class Config:
     # Scroll wheel detents per macOS scroll unit.
     scroll_divisor: float = 3.0
 
+    # Detach the on-screen cursor from the mouse while forwarding. Suppressing
+    # the events should already stop the local cursor moving, and this is
+    # global state: if the process dies hard while it is set, the cursor stays
+    # frozen for the whole session. Off unless the pointer is seen to drift.
+    freeze_local_cursor: bool = False
+
     @classmethod
     def load(cls, path: Path | None = None) -> "Config":
         path = path or CONFIG_PATH
@@ -64,6 +70,7 @@ class Config:
             remote=RemoteConfig(**raw.get("remote", {})),
             switch_monitor=raw.get("switch_monitor", True),
             forward_input=raw.get("forward_input", True),
+            freeze_local_cursor=raw.get("freeze_local_cursor", False),
             scroll_divisor=raw.get("scroll_divisor", 3.0),
         )
 
