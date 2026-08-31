@@ -1,0 +1,190 @@
+"""The macOS app: a full-screen window that owns the last Space.
+
+When that Space becomes active the monitor flips to b2omarchy and keyboard and
+trackpad start forwarding; when it stops being active both revert.
+
+Space membership is detected with ``NSWindow.isOnActiveSpace`` together with
+NSWorkspace's active-space-change notification. Both are public API, so no
+private CoreGraphics Spaces calls are needed.
+"""
+
+from __future__ import annotations
+
+import logging
+
+import AppKit
+import objc
+from Foundation import NSObject
+
+from .capture import InputCapture
+from .config import Config
+from .monitor import MonitorSwitcher
+from .transport import EventSender
+
+log = logging.getLogger(__name__)
+
+# The shared monitor, matched by size. b2omarchy is on this display's other input.
+TARGET_SCREEN_SIZE = (3440, 1440)
+
+
+def _find_target_screen():
+    """The shared monitor if we can identify it, else the main screen."""
+    for screen in AppKit.NSScreen.screens():
+        frame = screen.frame()
+        if (round(frame.size.width), round(frame.size.height)) == TARGET_SCREEN_SIZE:
+            return screen
+    log.warning(
+        "no %sx%s screen found; falling back to the main screen", *TARGET_SCREEN_SIZE
+    )
+    return AppKit.NSScreen.mainScreen()
+
+
+class SwitcherDelegate(NSObject):
+    """Owns the window and drives the switch in and switch out transitions."""
+
+    def initWithConfig_(self, config: Config):
+        self = objc.super(SwitcherDelegate, self).init()
+        if self is None:
+            return None
+        self.config = config
+        self.sender = EventSender(config.remote)
+        self.capture = InputCapture(
+            self.sender,
+            scroll_divisor=config.scroll_divisor,
+            on_panic=self.panic,
+        )
+        self.monitor = MonitorSwitcher(config.monitor, enabled=config.switch_monitor)
+        self.window = None
+        self.status_label = None
+        self.engaged = False
+        self._panicked = False
+        return self
+
+    # -- lifecycle ---------------------------------------------------------
+
+    def applicationDidFinishLaunching_(self, notification):
+        self._build_window()
+        self.capture.install()
+
+        AppKit.NSWorkspace.sharedWorkspace().notificationCenter().addObserver_selector_name_object_(
+            self,
+            b"activeSpaceChanged:",
+            AppKit.NSWorkspaceActiveSpaceDidChangeNotification,
+            None,
+        )
+        log.info("watching for Space changes")
+        # The window may already be on the active Space at launch.
+        self.activeSpaceChanged_(None)
+
+    def applicationWillTerminate_(self, notification):
+        self.disengage()
+
+    def applicationShouldTerminateAfterLastWindowClosed_(self, sender):
+        return True
+
+    def _build_window(self):
+        screen = _find_target_screen()
+        frame = screen.frame()
+        window = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_screen_(
+            frame,
+            AppKit.NSWindowStyleMaskTitled | AppKit.NSWindowStyleMaskFullSizeContentView,
+            AppKit.NSBackingStoreBuffered,
+            False,
+            screen,
+        )
+        window.setTitle_("b2omarchy")
+        window.setCollectionBehavior_(
+            AppKit.NSWindowCollectionBehaviorFullScreenPrimary
+        )
+        window.setTitlebarAppearsTransparent_(True)
+        window.setBackgroundColor_(AppKit.NSColor.blackColor())
+
+        label = AppKit.NSTextField.alloc().initWithFrame_(
+            AppKit.NSMakeRect(0, frame.size.height / 2 - 40, frame.size.width, 80)
+        )
+        label.setStringValue_("b2omarchy\nswipe here to hand over the monitor and input")
+        label.setAlignment_(AppKit.NSTextAlignmentCenter)
+        label.setBezeled_(False)
+        label.setDrawsBackground_(False)
+        label.setEditable_(False)
+        label.setSelectable_(False)
+        label.setTextColor_(AppKit.NSColor.secondaryLabelColor())
+        label.setFont_(AppKit.NSFont.systemFontOfSize_(28))
+        window.contentView().addSubview_(label)
+        self.status_label = label
+
+        window.makeKeyAndOrderFront_(None)
+        # Its own full-screen Space, which is the Space we then watch for.
+        window.toggleFullScreen_(None)
+        self.window = window
+
+    # -- space transitions -------------------------------------------------
+
+    def activeSpaceChanged_(self, notification):
+        if self.window is None:
+            return
+        on_active = bool(self.window.isOnActiveSpace())
+        log.debug("active space changed; ours is active: %s", on_active)
+        if on_active:
+            self.engage()
+        else:
+            self.disengage()
+
+    def engage(self):
+        """Our Space became active: monitor and input follow."""
+        if self.engaged:
+            return
+        # A panic stays in force until the user leaves the Space and comes back.
+        if self._panicked:
+            log.info("still disengaged after panic; leave and re-enter the Space to resume")
+            return
+
+        log.info("engaging")
+        if not self.capture.start():
+            self._set_status("could not forward input - check the receiver and permissions")
+            log.error("input capture did not start; leaving the monitor alone")
+            return
+
+        if not self.monitor.to_remote():
+            # Do not strand the user looking at b2umini with a dead keyboard.
+            log.error("monitor switch failed; backing out of forwarding")
+            self.capture.stop()
+            self._set_status("monitor switch failed")
+            return
+
+        self.engaged = True
+        self._set_status("forwarding to b2omarchy")
+
+    def disengage(self):
+        """Left our Space (or shutting down): put everything back."""
+        if not self.engaged:
+            return
+        log.info("disengaging")
+        self.capture.stop()
+        self.monitor.to_local()
+        self.engaged = False
+        self._set_status("idle")
+
+    def panic(self):
+        """Escape hatch: drop input forwarding and give the monitor back now."""
+        self._panicked = True
+        self.disengage()
+        self._set_status("panic - forwarding released")
+
+    def _set_status(self, text: str):
+        if self.status_label is not None:
+            self.status_label.setStringValue_(f"b2omarchy\n{text}")
+
+
+def run(config: Config | None = None) -> int:
+    config = config or Config.load()
+    app = AppKit.NSApplication.sharedApplication()
+    app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyRegular)
+    delegate = SwitcherDelegate.alloc().initWithConfig_(config)
+    app.setDelegate_(delegate)
+    app.activateIgnoringOtherApps_(True)
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        delegate.disengage()
+    return 0
