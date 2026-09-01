@@ -27,6 +27,34 @@ from Foundation import NSObject
 log = logging.getLogger(__name__)
 
 
+def plan_workspaces(
+    existing: list[int], taken: list[int] | None = None, spares: int = 2
+) -> list[int]:
+    """The workspace ids the strip should cover.
+
+    The real workspaces on the shared monitor, plus a few empty slots past the
+    end so there is always somewhere to swipe into: Hyprland creates a
+    workspace when one is focused, so entering a spare makes it real. Without
+    this the strip dead-ends at the last existing workspace and swiping right
+    silently does nothing.
+
+    Spare ids skip anything already in use on another output, since focusing
+    such a workspace would drag focus to that monitor instead.
+    """
+    existing = sorted(set(existing))
+    taken_ids = set(taken or []) | set(existing)
+
+    result = list(existing)
+    candidate = (max(taken_ids) if taken_ids else 0) + 1
+    for _ in range(max(0, spares)):
+        while candidate in taken_ids:
+            candidate += 1
+        result.append(candidate)
+        taken_ids.add(candidate)
+        candidate += 1
+    return result
+
+
 def _same_screen(a, b) -> bool:
     """Whether two NSScreens are the same display.
 

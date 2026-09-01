@@ -143,10 +143,14 @@ class Hyprland:
             return {"ok": False, "error": f"bad hyprctl json: {exc}"}
 
         ids = sorted(w["id"] for w in all_ws if w.get("monitor") == self.monitor and w["id"] > 0)
+        # Ids taken on *any* monitor. Spare slots must avoid these: focusing a
+        # workspace that lives on another output drags focus over there.
+        taken = sorted(w["id"] for w in all_ws if w["id"] > 0)
         return {
             "ok": True,
             "monitor": self.monitor,
             "workspaces": ids,
+            "taken": taken,
             "active": active.get("id"),
             "active_monitor": active.get("monitor"),
         }

@@ -50,6 +50,11 @@ class Config:
     # Mac's input alone entirely, which makes a first run safe to observe.
     forward_input: bool = True
 
+    # Empty Spaces kept past the last real workspace, so there is always
+    # somewhere to swipe into. Hyprland creates a workspace when one is
+    # focused, so entering a spare makes it real.
+    spare_workspaces: int = 2
+
     # Scroll wheel detents per macOS scroll unit.
     scroll_divisor: float = 3.0
 
@@ -71,6 +76,7 @@ class Config:
             switch_monitor=raw.get("switch_monitor", True),
             forward_input=raw.get("forward_input", True),
             freeze_local_cursor=raw.get("freeze_local_cursor", False),
+            spare_workspaces=raw.get("spare_workspaces", 2),
             scroll_divisor=raw.get("scroll_divisor", 3.0),
         )
 

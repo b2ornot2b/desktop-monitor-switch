@@ -41,6 +41,13 @@ The strip is rebuilt to match however many workspaces b2omarchy has, resynced
 whenever you leave it. (Resyncing while you are inside would yank you sideways
 mid-use, so it waits.)
 
+It also keeps a couple of empty Spaces past the last real workspace
+(`spare_workspaces`, default 2), so there is always somewhere to swipe into:
+Hyprland creates a workspace when one is focused, so entering a spare makes it
+real. Without them the strip dead-ends and swiping right silently does nothing.
+Spare ids skip anything in use on another output, since focusing such a
+workspace would drag focus to that monitor.
+
 ### Engaging
 
 The app puts a full-screen window on its own Space. macOS reports Space changes
@@ -120,6 +127,8 @@ Defaults match this setup. Override in `~/.config/dmswitch/config.json`
 | `monitor.local_input` / `remote_input` | `144` / `145` | LG-alt DDC values for HDMI 1 / HDMI 2 |
 | `remote.host` / `port` | `b2omarchy` / `24810` | where the receiver listens |
 | `switch_monitor` | `true` | set false to test forwarding without touching the monitor |
+| `spare_workspaces` | `2` | empty Spaces kept past the last real workspace |
+| `freeze_local_cursor` | `false` | detach the local cursor while forwarding (global state; can strand the cursor if the process dies) |
 
 The `--vcp=inputSelectAlt` symbolic form is required for this display; raw hex
 VCP codes fail *silently* on it.
