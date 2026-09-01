@@ -70,9 +70,13 @@ The agent runs with `--start-hidden`, so signing in builds the strip without
 switching you into it or handing the monitor over. Logs go to
 `~/Library/Logs/dmswitch.log`.
 
-macOS grants Accessibility and Input Monitoring **per binary**, and under
-launchd that binary is `.venv/bin/python`, not your terminal. If the log says
-"could not create event tap", grant those two permissions to that path.
+It runs from a small `.app` bundle (built automatically into `build/`) so macOS
+shows it as **dmswitch** rather than `python`. The bundle's executable is a
+symlink to the venv interpreter, so existing Accessibility and Input Monitoring
+grants continue to apply.
+
+If the log ever says "could not create event tap", grant those two permissions
+to `build/dmswitch.app` under System Settings › Privacy & Security.
 
 ## Using it
 

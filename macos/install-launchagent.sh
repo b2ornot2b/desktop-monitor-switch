@@ -13,6 +13,8 @@ LABEL="com.b2ornot2b.dmswitch"
 PLIST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="${REPO}/.venv/bin/python"
+APP="${REPO}/build/dmswitch.app"
+APP_EXE="${APP}/Contents/MacOS/dmswitch"
 LOG_DIR="${HOME}/Library/Logs"
 
 say() { printf '  %s\n' "$*"; }
@@ -29,6 +31,10 @@ if [[ ! -x "${PYTHON}" ]]; then
     exit 1
 fi
 
+# Built fresh each time: the bundle contains absolute paths to this repo.
+"${REPO}/macos/make-app-bundle.sh"
+SITE_PACKAGES="$("${PYTHON}" -c 'import site; print(site.getsitepackages()[0])')"
+
 mkdir -p "$(dirname "${PLIST}")" "${LOG_DIR}"
 
 cat > "${PLIST}" <<EOF
@@ -42,7 +48,10 @@ cat > "${PLIST}" <<EOF
 
     <key>ProgramArguments</key>
     <array>
-        <string>${PYTHON}</string>
+        <!-- The bundle's executable, not the bare interpreter: macOS takes
+             the displayed app name from the bundle around the running binary,
+             so this is what makes it read "dmswitch" instead of "python". -->
+        <string>${APP_EXE}</string>
         <!-- -u as well as PYTHONUNBUFFERED: without unbuffered output the log
              file stays empty under launchd and the app looks dead when it is
              actually working. -->
@@ -64,6 +73,11 @@ cat > "${PLIST}" <<EOF
     <dict>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
+        <!-- Running the interpreter from inside the bundle means it cannot
+             find the venv - Python looks for pyvenv.cfg beside the executable
+             - so site-packages is supplied explicitly. -->
+        <key>PYTHONPATH</key>
+        <string>${SITE_PACKAGES}:${REPO}/src</string>
         <!-- launchd's default PATH is /usr/bin:/bin:/usr/sbin:/sbin, which
              excludes Homebrew - so betterdisplaycli resolves from a shell but
              not from here. The app also has its own fallbacks. -->
@@ -112,14 +126,13 @@ cat <<EOF
 
   Logs: ${LOG_DIR}/dmswitch.log
 
-  IMPORTANT: macOS grants Accessibility and Input Monitoring per *binary*.
-  Launched from a terminal, that binary is your terminal. Launched by
-  launchd it is:
+  IMPORTANT: macOS grants Accessibility and Input Monitoring per *app*, and
+  the agent now runs from a bundle, so the grants move with it:
 
-      ${PYTHON}
+      ${APP}
 
-  which is a different grant. If the log shows "could not create event tap",
-  add that path in System Settings > Privacy & Security > Accessibility, and
-  again under Input Monitoring. You may need to drag it in from Finder with
-  Cmd+Shift+G.
+  Add that bundle under System Settings > Privacy & Security > Accessibility,
+  and again under Input Monitoring. Until you do, the monitor will still switch
+  but keystrokes will not be forwarded, and the log will say "could not create
+  event tap". Any older entry for .venv/bin/python can be removed.
 EOF

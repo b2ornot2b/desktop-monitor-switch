@@ -94,6 +94,32 @@ Permissions are per-binary too: under launchd the responsible binary is
 `.venv/bin/python`, not your terminal, so Accessibility and Input Monitoring
 grants may need adding for that path specifically.
 
+## macOS shows your app as "python" unless it is bundled
+
+The name in Mission Control, the menu bar and Force Quit comes from
+LaunchServices, which reads it from the bundle containing the running
+executable. Patching `CFBundleName` on `NSBundle.mainBundle()` does nothing -
+tested both before and after `NSApplication.sharedApplication()`, and
+`localizedName()` still returns `python` either way.
+
+A minimal bundle is enough, and the trick is what goes in `Contents/MacOS`:
+
+    dmswitch.app/Contents/Info.plist            CFBundleName = dmswitch
+    dmswitch.app/Contents/MacOS/dmswitch        symlink -> .venv/bin/python
+
+Because the executable path lies inside the bundle, LaunchServices attributes
+the process to it and `localizedName()` becomes `dmswitch`. A wrapper script
+that `exec`s python does **not** work: the process image becomes the
+interpreter at its own path, outside the bundle.
+
+The cost is that Python can no longer find the venv - it looks for
+`pyvenv.cfg` beside the executable - so `PYTHONPATH` has to supply
+site-packages.
+
+One pleasant surprise: TCC grants are keyed to the underlying binary, so
+Accessibility and Input Monitoring granted to `.venv/bin/python` still applied
+through the symlink. Bundling did not mean re-granting.
+
 ## Testing without a GUI
 
 Most logic can be pulled out into plain functions and tested normally — the
