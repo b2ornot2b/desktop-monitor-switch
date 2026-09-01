@@ -23,7 +23,7 @@ from .capture import InputCapture
 from .config import Config
 from .monitor import MonitorSwitcher
 from .remote import ControlClient
-from .spaces import WorkspaceStrip
+from .spaces import WorkspaceStrip, plan_workspaces
 from .transport import EventSender
 
 log = logging.getLogger(__name__)
@@ -139,11 +139,17 @@ class SwitcherDelegate(NSObject):
             )
             workspace_ids = [1]
         else:
-            workspace_ids = state.get("workspaces") or [1]
+            existing = state.get("workspaces") or [1]
+            workspace_ids = plan_workspaces(
+                existing,
+                taken=state.get("taken"),
+                spares=self.config.spare_workspaces,
+            )
             log.info(
-                "b2omarchy has workspaces %s on %s",
-                workspace_ids,
+                "b2omarchy has workspaces %s on %s; strip covers %s",
+                existing,
                 state.get("monitor"),
+                workspace_ids,
             )
 
         if self.strip.matches(workspace_ids) and self.strip.windows:

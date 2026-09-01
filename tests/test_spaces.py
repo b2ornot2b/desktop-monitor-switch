@@ -64,3 +64,40 @@ class TestStripMatching:
         strip = WorkspaceStrip(FakeScreen(0, 0, 100, 100))
         strip.building = True
         assert strip.active_workspace_id() is None
+
+
+class TestPlanWorkspaces:
+    """The strip needs slots past the last real workspace, or it dead-ends."""
+
+    def test_spares_are_appended_after_the_existing_workspaces(self):
+        from dmswitch.spaces import plan_workspaces
+
+        assert plan_workspaces([1, 2], taken=[1, 2], spares=2) == [1, 2, 3, 4]
+
+    def test_spares_skip_ids_used_on_another_monitor(self):
+        # Focusing a workspace that lives on another output would drag focus
+        # to that monitor, so 3 must be stepped over here.
+        from dmswitch.spaces import plan_workspaces
+
+        assert plan_workspaces([1, 2], taken=[1, 2, 3], spares=2) == [1, 2, 4, 5]
+
+    def test_no_spares_gives_just_the_real_workspaces(self):
+        from dmswitch.spaces import plan_workspaces
+
+        assert plan_workspaces([1, 2], taken=[1, 2], spares=0) == [1, 2]
+
+    def test_existing_ids_are_sorted_and_deduplicated(self):
+        from dmswitch.spaces import plan_workspaces
+
+        assert plan_workspaces([3, 1, 1], taken=[1, 3], spares=1) == [1, 3, 4]
+
+    def test_gaps_below_the_end_are_left_alone(self):
+        # Reusing a gap would renumber the strip relative to b2omarchy.
+        from dmswitch.spaces import plan_workspaces
+
+        assert plan_workspaces([1, 5], taken=[1, 5], spares=1) == [1, 5, 6]
+
+    def test_works_with_no_existing_workspaces(self):
+        from dmswitch.spaces import plan_workspaces
+
+        assert plan_workspaces([], taken=[], spares=2) == [1, 2]
