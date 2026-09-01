@@ -60,10 +60,17 @@ class Config:
     # hand the monitor to b2omarchy the moment you sign in.
     start_hidden: bool = False
 
-    # How large a snapshot to fetch for the Space backgrounds, as a
-    # fraction of the real output. 0.25 gives 860x360 at about 15 KB,
-    # which is plenty for a Mission Control thumbnail.
-    tile_scale: float = 0.25
+    # Snapshot size for the Space backgrounds, as a fraction of the real
+    # output. Full size by default: the Space is displayed at the monitor's
+    # native resolution, so anything less is visibly upscaled - and scaling
+    # is actually slower than not, since it costs CPU the capture does not.
+    # 1.0 at quality 75 is roughly 500 KB and about 60 ms.
+    tile_scale: float = 1.0
+    tile_quality: int = 90
+    # "jpeg" or "png". These snapshots are mostly text, which is exactly
+    # where JPEG artefacts show; png is lossless at roughly 1 MB and a
+    # slower capture (~280ms against ~60ms).
+    tile_format: str = "jpeg"
 
     # Scroll wheel detents per macOS scroll unit.
     scroll_divisor: float = 3.0
@@ -88,7 +95,9 @@ class Config:
             freeze_local_cursor=raw.get("freeze_local_cursor", False),
             spare_workspaces=raw.get("spare_workspaces", 2),
             start_hidden=raw.get("start_hidden", False),
-            tile_scale=raw.get("tile_scale", 0.25),
+            tile_scale=raw.get("tile_scale", 1.0),
+            tile_quality=raw.get("tile_quality", 90),
+            tile_format=raw.get("tile_format", "jpeg"),
             scroll_divisor=raw.get("scroll_divisor", 3.0),
         )
 

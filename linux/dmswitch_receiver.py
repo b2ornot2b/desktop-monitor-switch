@@ -210,12 +210,19 @@ class Hyprland:
             "error": None if state is True else "could not wake the output",
         }
 
-    def capture(self, scale: float = 0.25, quality: int = 55) -> dict:
+    def capture(
+        self, scale: float = 1.0, quality: int = 90, fmt: str = "jpeg"
+    ) -> dict:
         """A JPEG of whatever is currently on the shared monitor.
 
         grim can only photograph what an output is actually displaying, so
         this captures the *active* workspace; the Mac caches one image per
         workspace as it visits them.
+
+        Full resolution by default. Counter-intuitively that is also the
+        fastest option - scaling costs more CPU than the capture itself
+        (~57ms at 1.0 against ~183ms at 0.25) - and the Space is shown at the
+        monitor's native size, so anything smaller is visibly upscaled.
 
         Two guards, both learned the hard way:
 
@@ -233,10 +240,12 @@ class Hyprland:
         env = dict(os.environ)
         env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
         env.setdefault("WAYLAND_DISPLAY", "wayland-1")
-        cmd = [
-            "grim", "-o", self.monitor,
-            "-t", "jpeg", "-q", str(quality), "-s", str(scale), "-",
-        ]
+        fmt = "png" if str(fmt).lower() == "png" else "jpeg"
+        cmd = ["grim", "-o", self.monitor, "-t", fmt, "-s", str(scale)]
+        if fmt == "jpeg":
+            # grim rejects -q for png.
+            cmd += ["-q", str(quality)]
+        cmd.append("-")
         try:
             result = subprocess.run(cmd, capture_output=True, timeout=8, env=env)
         except FileNotFoundError:
@@ -252,7 +261,7 @@ class Hyprland:
 
         return {
             "ok": True,
-            "format": "jpeg",
+            "format": fmt,
             "bytes": len(result.stdout),
             "image": base64.b64encode(result.stdout).decode("ascii"),
         }
@@ -429,8 +438,11 @@ def dispatch_control(line: bytes, hypr: Hyprland) -> dict:
         log.info("focusing workspace %s", workspace_id)
         return hypr.focus(workspace_id)
     if command == "capture":
-        scale = request.get("scale", 0.25)
-        result = hypr.capture(scale=scale)
+        result = hypr.capture(
+            scale=request.get("scale", 1.0),
+            quality=request.get("quality", 90),
+            fmt=request.get("format", "jpeg"),
+        )
         if not result.get("ok"):
             log.debug("capture failed: %s", result.get("error"))
         return result

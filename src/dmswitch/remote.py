@@ -37,7 +37,9 @@ class ControlClient:
         self._worker: threading.Thread | None = None
         self._stop = threading.Event()
         self._tile_handler = None
-        self.tile_scale = 0.25
+        self.tile_scale = 1.0
+        self.tile_quality = 90
+        self.tile_format = "jpeg"
 
     # -- connection --------------------------------------------------------
 
@@ -102,9 +104,14 @@ class ControlClient:
         """Workspace ids on the shared monitor, and which is active."""
         return self.request({"cmd": "workspaces"})
 
-    def capture(self, scale: float = 0.25) -> bytes | None:
+    def capture(
+        self, scale: float = 1.0, quality: int = 90, fmt: str = "jpeg"
+    ) -> bytes | None:
         """A JPEG of whatever b2omarchy is currently showing, or None."""
-        response = self.request({"cmd": "capture", "scale": scale}, timeout=12)
+        response = self.request(
+            {"cmd": "capture", "scale": scale, "quality": quality, "format": fmt},
+            timeout=20,
+        )
         if not response.get("ok"):
             log.debug("capture unavailable: %s", response.get("error"))
             return None
@@ -180,7 +187,9 @@ class ControlClient:
     def _do_capture(self, workspace_id: int) -> None:
         if self._tile_handler is None:
             return
-        image = self.capture(scale=self.tile_scale)
+        image = self.capture(
+            scale=self.tile_scale, quality=self.tile_quality, fmt=self.tile_format
+        )
         if image:
             log.debug("tile for workspace %s: %d bytes", workspace_id, len(image))
             self._tile_handler(workspace_id, image)
