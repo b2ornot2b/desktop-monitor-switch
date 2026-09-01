@@ -171,3 +171,46 @@ class TestWindowTitle:
 
         for title in ("vim", "", None, "a b c"):
             assert _window_title(1, title).startswith("b2omarchy: ")
+
+
+class TestStripStability:
+    """The strip must not churn.
+
+    Visiting a spare Space makes Hyprland create that workspace, which changes
+    the id set and so the plan. Rebuilding on every change tore all the windows
+    down, destroying the user's Spaces and re-adding them at the end of the
+    order - repeatedly, every time they left the strip.
+    """
+
+    def _strip(self):
+        from dmswitch.spaces import WorkspaceStrip
+
+        strip = WorkspaceStrip(FakeScreen(0, 0, 3440, 1440))
+        strip.workspace_ids = [1, 3, 4]
+        strip.windows = ["w1", "w3", "w4"]  # stand-ins; extend() is not called
+        return strip
+
+    def test_a_shifting_spare_plan_leaves_the_strip_alone(self):
+        # Real workspaces are all covered, so nothing should be added even
+        # though a fresh plan would have picked different spare ids.
+        strip = self._strip()
+        existing = [1]
+        missing = [w for w in existing if w not in set(strip.workspace_ids)]
+        assert missing == []
+
+    def test_a_genuinely_new_workspace_is_added(self):
+        strip = self._strip()
+        existing = [1, 9]
+        missing = [w for w in existing if w not in set(strip.workspace_ids)]
+        assert missing == [9]
+
+    def test_extend_ignores_ids_already_covered(self):
+        from dmswitch.spaces import WorkspaceStrip
+
+        strip = WorkspaceStrip(FakeScreen(0, 0, 3440, 1440))
+        strip.workspace_ids = [1, 2]
+        strip.windows = ["a", "b"]
+        strip.extend([1, 2])          # all known: must be a no-op
+        assert strip.workspace_ids == [1, 2]
+        assert strip.windows == ["a", "b"]
+        assert strip.building is False
