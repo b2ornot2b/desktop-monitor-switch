@@ -152,6 +152,11 @@ class Hyprland:
             return {"ok": False, "error": f"bad hyprctl json: {exc}"}
 
         ids = sorted(w["id"] for w in all_ws if w.get("monitor") == self.monitor and w["id"] > 0)
+        titles = {
+            str(w["id"]): (w.get("lastwindowtitle") or "")
+            for w in all_ws
+            if w.get("monitor") == self.monitor and w["id"] > 0
+        }
         # Ids taken on *any* monitor. Spare slots must avoid these: focusing a
         # workspace that lives on another output drags focus over there.
         taken = sorted(w["id"] for w in all_ws if w["id"] > 0)
@@ -159,6 +164,7 @@ class Hyprland:
             "ok": True,
             "monitor": self.monitor,
             "workspaces": ids,
+            "titles": titles,
             "taken": taken,
             "active": active.get("id"),
             "active_monitor": active.get("monitor"),
@@ -259,10 +265,21 @@ class Hyprland:
                 "error": "grim failed: " + result.stderr.decode(errors="replace").strip(),
             }
 
+        active = self._run(["activeworkspace", "-j"])
+        workspace_id, title = None, ""
+        if active:
+            try:
+                info = json.loads(active)
+                workspace_id, title = info.get("id"), info.get("lastwindowtitle") or ""
+            except ValueError:
+                pass
+
         return {
             "ok": True,
             "format": fmt,
             "bytes": len(result.stdout),
+            "workspace": workspace_id,
+            "title": title,
             "image": base64.b64encode(result.stdout).decode("ascii"),
         }
 

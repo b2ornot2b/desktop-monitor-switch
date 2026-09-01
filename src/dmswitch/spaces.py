@@ -56,6 +56,18 @@ def plan_workspaces(
     return result
 
 
+def _window_title(workspace_id: int, remote_title: str | None) -> str:
+    """What macOS shows for this Space.
+
+    Named after what is actually on the far machine, so the Spaces are
+    distinguishable at a glance rather than all reading the same.
+    """
+    remote_title = (remote_title or "").strip()
+    if remote_title:
+        return f"b2omarchy: {remote_title}"
+    return f"b2omarchy: workspace {workspace_id}"
+
+
 def cg_point_in_frame(x: float, y: float, frame, main_height: float) -> bool:
     """Whether a CoreGraphics event location falls inside a Cocoa screen frame.
 
@@ -165,7 +177,7 @@ class WorkspaceStrip:
             self.screen,
         )
         window.setFrame_display_(frame, False)
-        window.setTitle_(f"b2omarchy · workspace {workspace_id}")
+        window.setTitle_(_window_title(workspace_id, None))
         window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorFullScreenPrimary)
         window.setTitlebarAppearsTransparent_(True)
         window.setBackgroundColor_(AppKit.NSColor.blackColor())
@@ -250,6 +262,21 @@ class WorkspaceStrip:
         self.labels = {}
         self._pending = []
         self.building = False
+
+    def set_title(self, workspace_id: int, remote_title: str | None) -> bool:
+        """Rename a Space after whatever b2omarchy is showing on it."""
+        for window in self.windows:
+            identifier = window.identifier()
+            if identifier and int(identifier) == workspace_id:
+                window.setTitle_(_window_title(workspace_id, remote_title))
+                label = self.labels.get(workspace_id)
+                if label is not None and not label.isHidden():
+                    label.setStringValue_(
+                        f"b2omarchy\nworkspace {workspace_id}"
+                        + (f"\n{remote_title}" if remote_title else "")
+                    )
+                return True
+        return False
 
     def set_tile(self, workspace_id: int, jpeg: bytes) -> bool:
         """Show a snapshot as the background of a workspace's Space.

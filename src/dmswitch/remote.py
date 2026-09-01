@@ -106,20 +106,21 @@ class ControlClient:
 
     def capture(
         self, scale: float = 1.0, quality: int = 90, fmt: str = "jpeg"
-    ) -> bytes | None:
-        """A JPEG of whatever b2omarchy is currently showing, or None."""
+    ) -> tuple[bytes | None, str]:
+        """A snapshot of what b2omarchy is showing, plus its window title."""
         response = self.request(
             {"cmd": "capture", "scale": scale, "quality": quality, "format": fmt},
             timeout=20,
         )
         if not response.get("ok"):
             log.debug("capture unavailable: %s", response.get("error"))
-            return None
+            return None, ""
+        title = response.get("title") or ""
         try:
-            return base64.b64decode(response["image"])
+            return base64.b64decode(response["image"]), title
         except (KeyError, ValueError) as exc:
             log.warning("could not decode captured tile: %s", exc)
-            return None
+            return None, title
 
     def wake(self) -> dict:
         """Wake b2omarchy's output so the monitor has a signal to show."""
@@ -187,9 +188,14 @@ class ControlClient:
     def _do_capture(self, workspace_id: int) -> None:
         if self._tile_handler is None:
             return
-        image = self.capture(
+        image, title = self.capture(
             scale=self.tile_scale, quality=self.tile_quality, fmt=self.tile_format
         )
-        if image:
-            log.debug("tile for workspace %s: %d bytes", workspace_id, len(image))
-            self._tile_handler(workspace_id, image)
+        if image or title:
+            log.debug(
+                "tile for workspace %s: %d bytes, title %r",
+                workspace_id,
+                len(image) if image else 0,
+                title,
+            )
+            self._tile_handler(workspace_id, image, title)

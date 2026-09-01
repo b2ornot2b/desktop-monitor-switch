@@ -79,6 +79,10 @@ discovered by hanging, and the subprocess is given a timeout regardless.
 Captures run on the control worker thread and are applied to the windows on the
 main thread, since AppKit is not thread safe.
 
+Each Space is also named after the workspace's current window, so they read
+as `b2omarchy: b2@b2omarchy:~` rather than all looking alike. Titles come from
+Hyprland's `lastwindowtitle`, refreshed whenever a snapshot is taken.
+
 ## Components
 
 | module | responsibility |
