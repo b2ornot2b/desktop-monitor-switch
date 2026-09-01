@@ -79,6 +79,15 @@ When the Space becomes active:
 
 Leaving the strip reverses both.
 
+## Documentation
+
+| | |
+|---|---|
+| [QuickStart.md](QuickStart.md) | get it running, and how to stop it |
+| [docs/](docs/) | architecture, protocol, configuration, operations, troubleshooting |
+| [learnings.md](learnings.md) | what this cost to find out, so it only costs it once |
+| [CLAUDE.md](CLAUDE.md) | orientation for working in this repo |
+
 ## Setup
 
 ### b2omarchy (receiver)
