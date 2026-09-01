@@ -27,6 +27,12 @@ from Foundation import NSObject
 
 log = logging.getLogger(__name__)
 
+# The banner has to survive Mission Control shrinking a 3440px Space to a
+# couple of hundred pixels, so it is sized as a fraction of the window rather
+# than in points: 0.11 of 1440px is ~158pt, which reduces to a readable ~9pt.
+BANNER_HEIGHT_FRACTION = 0.16
+BANNER_FONT_FRACTION = 0.11
+
 
 def plan_workspaces(
     existing: list[int], taken: list[int] | None = None, spares: int = 2
@@ -196,21 +202,51 @@ class WorkspaceStrip:
         window.contentView().addSubview_(image_view)
         self.image_views[workspace_id] = image_view
 
+        # A title banner burnt into the window itself.
+        #
+        # Mission Control labels a full-screen Space from the owning process's
+        # application name - it stores only a pid per Space, with no name field
+        # - so the per-workspace title cannot go in that label. It *can* go in
+        # the thumbnail, which is a picture of this window.
+        #
+        # Hence the enormous type. Mission Control shrinks a 3440px-wide Space
+        # to a couple of hundred pixels, roughly 17x, so anything at a normal
+        # size is unreadable there. This window is never actually looked at
+        # full size - while it is on screen the monitor is showing b2omarchy -
+        # so the banner costs nothing and is legible where it matters.
+        banner_height = frame.size.height * BANNER_HEIGHT_FRACTION
+        banner = AppKit.NSView.alloc().initWithFrame_(
+            AppKit.NSMakeRect(
+                0, frame.size.height - banner_height, frame.size.width, banner_height
+            )
+        )
+        banner.setWantsLayer_(True)
+        banner.layer().setBackgroundColor_(
+            AppKit.NSColor.colorWithCalibratedWhite_alpha_(0.0, 0.55).CGColor()
+        )
+        banner.setAutoresizingMask_(
+            AppKit.NSViewWidthSizable | AppKit.NSViewMinYMargin
+        )
+        window.contentView().addSubview_(banner)
+
         label = AppKit.NSTextField.alloc().initWithFrame_(
-            AppKit.NSMakeRect(0, frame.size.height / 2 - 60, frame.size.width, 120)
+            AppKit.NSMakeRect(
+                0, banner_height * 0.18, frame.size.width, banner_height * 0.64
+            )
         )
-        label.setStringValue_(
-            f"b2omarchy\nworkspace {workspace_id}\n\n"
-            "⌘Q quit · ⌃⌥⌘⎋ panic · swipe left past the first to return"
-        )
+        label.setStringValue_(_window_title(workspace_id, None))
         label.setAlignment_(AppKit.NSTextAlignmentCenter)
         label.setBezeled_(False)
         label.setDrawsBackground_(False)
         label.setEditable_(False)
         label.setSelectable_(False)
-        label.setTextColor_(AppKit.NSColor.secondaryLabelColor())
-        label.setFont_(AppKit.NSFont.systemFontOfSize_(28))
-        window.contentView().addSubview_(label)
+        label.setTextColor_(AppKit.NSColor.whiteColor())
+        label.setFont_(
+            AppKit.NSFont.boldSystemFontOfSize_(frame.size.height * BANNER_FONT_FRACTION)
+        )
+        label.setAutoresizingMask_(AppKit.NSViewWidthSizable)
+        label.cell().setLineBreakMode_(AppKit.NSLineBreakByTruncatingMiddle)
+        banner.addSubview_(label)
         self.labels[workspace_id] = label
 
         # objc associates the id with the window so lookups stay simple.
@@ -268,13 +304,11 @@ class WorkspaceStrip:
         for window in self.windows:
             identifier = window.identifier()
             if identifier and int(identifier) == workspace_id:
-                window.setTitle_(_window_title(workspace_id, remote_title))
+                title = _window_title(workspace_id, remote_title)
+                window.setTitle_(title)
                 label = self.labels.get(workspace_id)
-                if label is not None and not label.isHidden():
-                    label.setStringValue_(
-                        f"b2omarchy\nworkspace {workspace_id}"
-                        + (f"\n{remote_title}" if remote_title else "")
-                    )
+                if label is not None:
+                    label.setStringValue_(title)
                 return True
         return False
 
@@ -293,11 +327,6 @@ class WorkspaceStrip:
             log.warning("workspace %s tile was not a usable image", workspace_id)
             return False
         view.setImage_(image)
-        # The caption is only there to explain an empty Space; once there is a
-        # picture it just gets in the way.
-        label = self.labels.get(workspace_id)
-        if label is not None:
-            label.setHidden_(True)
         return True
 
     # -- queries -----------------------------------------------------------

@@ -80,3 +80,32 @@ left-to-right order then no longer matches.
 Creating a full-screen Space also switches to it, so a run that builds N Spaces
 ends up on the last one. Explicitly returning to the first afterwards makes
 launch behaviour predictable.
+
+
+## Mission Control will not show you a per-Space title
+
+A full-screen Space is labelled with the *application name* of the process
+owning its window. Asking macOS what it stores per Space makes the reason
+plain - via the private `CGSCopyManagedDisplaySpaces`:
+
+    id=881 type=4 keys=['ManagedSpaceID','TileLayoutManager','WallSpace',
+                        'fs_wid','id64','pid','type']
+
+A `pid` and a window id. **No name field exists**, so there is nothing to set.
+Mission Control resolves the pid to an app and shows its name, which is why the
+label tracked `python` and then `dmswitch` while the window titles - correctly
+set, and visible in `CGWindowListCopyWindowInfo` - were ignored throughout.
+
+Since the label follows the pid, genuinely per-Space names would need a
+separate process per Space, and bundle names are static anyway, so a title that
+changes as you work still could not be shown.
+
+**What does work: draw the title into the window.** The Space thumbnail is a
+picture of your window, and you own every pixel of it. Mission Control shrinks
+a 3440px-wide Space by roughly 17x, so the text has to be enormous - about
+0.11 of the window height, ~158pt here, reducing to a readable ~9pt.
+
+That would be absurd in a window anyone looked at. This one is never looked at:
+while it is on screen the monitor is displaying the other machine. Worth
+remembering that a window nobody sees at full size is free to be shaped
+entirely around how it appears in a thumbnail.
