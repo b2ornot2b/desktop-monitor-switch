@@ -89,6 +89,10 @@ class SwitcherDelegate(NSObject):
         self.engaged = False
         self.current_workspace = None
         self._panicked = False
+        # Set while starting hidden: blocks engaging until the strip has
+        # actually been left once, since hiding is asynchronous and any
+        # evaluation before it lands still sees a strip Space.
+        self._awaiting_first_exit = False
         return self
 
     # -- lifecycle ---------------------------------------------------------
@@ -158,6 +162,18 @@ class SwitcherDelegate(NSObject):
         self.strip.build(workspace_ids)
 
     def _strip_ready(self):
+        if self.config.start_hidden:
+            # Creating full-screen Spaces switches to them, so at login this
+            # would dump the user into b2omarchy uninvited. Step back out and
+            # wait to be swiped to.
+            log.info("strip built; staying out of the way until you swipe to it")
+            self._awaiting_first_exit = True
+            AppKit.NSApp().hide_(None)
+            # Deliberately no re-evaluation here: hiding switches Space
+            # asynchronously, so asking now would still see a strip Space and
+            # engage - exactly what this flag exists to avoid. The
+            # active-space notification arrives once the switch completes.
+            return
         # Building leaves us on the last Space created, which would drop the
         # user at the far end of the strip. Start at the front instead, so
         # entering always means "b2omarchy's first workspace".
@@ -196,7 +212,15 @@ class SwitcherDelegate(NSObject):
         if workspace_id is None:
             if self.engaged:
                 log.info("releasing because the strip Space is no longer showing")
+            if self._awaiting_first_exit:
+                log.debug("left the strip; ready to engage when swiped to")
+                self._awaiting_first_exit = False
             self.disengage()
+            return
+
+        if self._awaiting_first_exit:
+            # Started hidden and the Space has not moved off us yet.
+            log.debug("not engaging yet: waiting to leave the strip first")
             return
 
         self.engage()

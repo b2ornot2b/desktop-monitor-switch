@@ -59,6 +59,21 @@ workspace follow. When that looks right, drop the flag:
 .venv/bin/python -m dmswitch -v
 ```
 
+## Optional: start at login
+
+```bash
+./macos/install-launchagent.sh              # install and load
+./macos/install-launchagent.sh --uninstall  # remove
+```
+
+The agent runs with `--start-hidden`, so signing in builds the strip without
+switching you into it or handing the monitor over. Logs go to
+`~/Library/Logs/dmswitch.log`.
+
+macOS grants Accessibility and Input Monitoring **per binary**, and under
+launchd that binary is `.venv/bin/python`, not your terminal. If the log says
+"could not create event tap", grant those two permissions to that path.
+
 ## Using it
 
 Your Spaces and b2omarchy's workspaces are one continuous strip:

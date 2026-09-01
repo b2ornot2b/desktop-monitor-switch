@@ -55,6 +55,11 @@ class Config:
     # focused, so entering a spare makes it real.
     spare_workspaces: int = 2
 
+    # Build the strip without pulling the user into it. Creating a
+    # full-screen Space switches to it, so at login this would otherwise
+    # hand the monitor to b2omarchy the moment you sign in.
+    start_hidden: bool = False
+
     # Scroll wheel detents per macOS scroll unit.
     scroll_divisor: float = 3.0
 
@@ -77,6 +82,7 @@ class Config:
             forward_input=raw.get("forward_input", True),
             freeze_local_cursor=raw.get("freeze_local_cursor", False),
             spare_workspaces=raw.get("spare_workspaces", 2),
+            start_hidden=raw.get("start_hidden", False),
             scroll_divisor=raw.get("scroll_divisor", 3.0),
         )
 

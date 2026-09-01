@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 from .config import CONFIG_PATH, Config
 
@@ -17,6 +18,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     parser.add_argument(
+        "--log-file",
+        help="also write the log here. Worth using when running under launchd, "
+        "whose stdout redirection does not reliably capture this process.",
+    )
+    parser.add_argument(
         "--no-monitor-switch",
         action="store_true",
         help="forward input only, leave the monitor input alone (useful when testing)",
@@ -26,6 +32,13 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="do not capture or forward input; just report Space transitions. "
         "Recommended for a first run, since it cannot take over your keyboard.",
+    )
+    parser.add_argument(
+        "--start-hidden",
+        action="store_true",
+        help="build the strip but stay out of the way rather than switching into "
+        "it on launch. Used by the LaunchAgent, so signing in does not hand the "
+        "monitor over uninvited.",
     )
     parser.add_argument("--host", help="override the receiver host")
     parser.add_argument("--port", type=int, help="override the receiver port")
@@ -41,10 +54,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    if args.log_file:
+        # Own the file rather than relying on the launcher to capture stdout:
+        # under launchd the redirect silently produced nothing, which makes a
+        # working agent look dead.
+        path = Path(args.log_file).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(path))
+
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
         datefmt="%H:%M:%S",
+        handlers=handlers,
     )
 
     config = Config.load()
@@ -52,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
         config.switch_monitor = False
     if args.no_forward:
         config.forward_input = False
+    if args.start_hidden:
+        config.start_hidden = True
     if args.host:
         config.remote.host = args.host
     if args.port:
