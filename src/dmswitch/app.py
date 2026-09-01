@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import signal
+import threading
 
 import AppKit
 import objc
@@ -93,6 +94,12 @@ class SwitcherDelegate(NSObject):
         # actually been left once, since hiding is asynchronous and any
         # evaluation before it lands still sees a strip Space.
         self._awaiting_first_exit = False
+        # Captured tiles land here from the control worker and are applied on
+        # the main thread, since AppKit must not be touched from elsewhere.
+        self._pending_tiles: dict[int, bytes] = {}
+        self._tiles_lock = threading.Lock()
+        self.control.set_tile_handler(self._tile_captured)
+        self.control.tile_scale = config.tile_scale
         return self
 
     # -- lifecycle ---------------------------------------------------------
@@ -269,6 +276,10 @@ class SwitcherDelegate(NSObject):
         if not self.engaged:
             return
         log.info("disengaging")
+        # Snapshot what is being left behind *before* the monitor goes back:
+        # once the input switches away the output sleeps and capture fails.
+        if self.current_workspace is not None:
+            self.control.capture_async(self.current_workspace)
         self.capture.stop()
         self.monitor.to_local()
         self.engaged = False
@@ -300,6 +311,27 @@ class SwitcherDelegate(NSObject):
         """Escape hatch: drop input forwarding and give the monitor back now."""
         self._panicked = True
         self.disengage()
+
+    # -- workspace tiles ---------------------------------------------------
+
+    @objc.python_method
+    def _tile_captured(self, workspace_id: int, jpeg: bytes):
+        """Called on the control worker thread; hand off to the main thread."""
+        with self._tiles_lock:
+            self._pending_tiles[workspace_id] = jpeg
+        self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            b"applyPendingTiles:", None, False
+        )
+
+    def applyPendingTiles_(self, _ignored):
+        if self.strip is None:
+            return
+        with self._tiles_lock:
+            pending = dict(self._pending_tiles)
+            self._pending_tiles.clear()
+        for workspace_id, jpeg in pending.items():
+            if self.strip.set_tile(workspace_id, jpeg):
+                log.debug("updated tile for workspace %s", workspace_id)
 
     # -- signal handling ---------------------------------------------------
 

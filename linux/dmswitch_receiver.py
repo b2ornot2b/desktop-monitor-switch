@@ -25,6 +25,7 @@ Stdlib only, so it can just be copied across and run.
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import logging
 import os
@@ -209,6 +210,53 @@ class Hyprland:
             "error": None if state is True else "could not wake the output",
         }
 
+    def capture(self, scale: float = 0.25, quality: int = 55) -> dict:
+        """A JPEG of whatever is currently on the shared monitor.
+
+        grim can only photograph what an output is actually displaying, so
+        this captures the *active* workspace; the Mac caches one image per
+        workspace as it visits them.
+
+        Two guards, both learned the hard way:
+
+        - grim blocks **forever** on a DPMS-off output, so the display state
+          is checked first rather than discovered by hanging.
+        - even then the subprocess gets a timeout, because a wedged capture
+          would otherwise take this thread with it.
+        """
+        if not self.signature():
+            return {"ok": False, "error": "no hyprland instance for monitor"}
+
+        if self.dpms_on() is not True:
+            return {"ok": False, "error": "output is asleep; nothing to capture"}
+
+        env = dict(os.environ)
+        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+        env.setdefault("WAYLAND_DISPLAY", "wayland-1")
+        cmd = [
+            "grim", "-o", self.monitor,
+            "-t", "jpeg", "-q", str(quality), "-s", str(scale), "-",
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=8, env=env)
+        except FileNotFoundError:
+            return {"ok": False, "error": "grim is not installed"}
+        except subprocess.TimeoutExpired:
+            return {"ok": False, "error": "grim timed out"}
+
+        if result.returncode != 0 or not result.stdout:
+            return {
+                "ok": False,
+                "error": "grim failed: " + result.stderr.decode(errors="replace").strip(),
+            }
+
+        return {
+            "ok": True,
+            "format": "jpeg",
+            "bytes": len(result.stdout),
+            "image": base64.b64encode(result.stdout).decode("ascii"),
+        }
+
     def focus(self, workspace_id: int) -> dict:
         """Switch the shared monitor to a workspace.
 
@@ -380,6 +428,12 @@ def dispatch_control(line: bytes, hypr: Hyprland) -> dict:
             return {"ok": False, "error": "focus needs an integer id"}
         log.info("focusing workspace %s", workspace_id)
         return hypr.focus(workspace_id)
+    if command == "capture":
+        scale = request.get("scale", 0.25)
+        result = hypr.capture(scale=scale)
+        if not result.get("ok"):
+            log.debug("capture failed: %s", result.get("error"))
+        return result
     if command == "wake":
         result = hypr.wake()
         if result.get("changed"):
