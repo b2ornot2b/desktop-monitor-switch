@@ -141,3 +141,33 @@ class TestCGPointInFrame:
 
         # Left of the 34", which starts at x=787.
         assert cg_point_in_frame(100, -560, self.SHARED, self.MAIN_H) is False
+
+
+class TestWindowTitle:
+    """Spaces are named after what b2omarchy has on them.
+
+    All Spaces reading the same makes them indistinguishable in Mission
+    Control, which is the whole reason for showing a title at all.
+    """
+
+    def test_uses_the_remote_window_title(self):
+        from dmswitch.spaces import _window_title
+
+        assert _window_title(1, "b2@b2omarchy:~") == "b2omarchy: b2@b2omarchy:~"
+
+    def test_falls_back_to_the_workspace_number(self):
+        from dmswitch.spaces import _window_title
+
+        assert _window_title(3, "") == "b2omarchy: workspace 3"
+        assert _window_title(3, None) == "b2omarchy: workspace 3"
+
+    def test_whitespace_only_titles_are_treated_as_empty(self):
+        from dmswitch.spaces import _window_title
+
+        assert _window_title(2, "   ") == "b2omarchy: workspace 2"
+
+    def test_title_is_always_prefixed_so_the_machine_is_obvious(self):
+        from dmswitch.spaces import _window_title
+
+        for title in ("vim", "", None, "a b c"):
+            assert _window_title(1, title).startswith("b2omarchy: ")

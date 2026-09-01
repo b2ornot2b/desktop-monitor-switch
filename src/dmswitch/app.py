@@ -96,7 +96,7 @@ class SwitcherDelegate(NSObject):
         self._awaiting_first_exit = False
         # Captured tiles land here from the control worker and are applied on
         # the main thread, since AppKit must not be touched from elsewhere.
-        self._pending_tiles: dict[int, bytes] = {}
+        self._pending_tiles: dict[int, tuple] = {}
         self._tiles_lock = threading.Lock()
         self.control.set_tile_handler(self._tile_captured)
         self.control.tile_scale = config.tile_scale
@@ -166,11 +166,24 @@ class SwitcherDelegate(NSObject):
                 workspace_ids,
             )
 
+        titles = (state.get("titles") or {}) if state.get("ok") else {}
         if self.strip.matches(workspace_ids) and self.strip.windows:
+            self._apply_titles(titles)
             return
         self.strip.build(workspace_ids)
+        self._pending_titles = titles
+
+    @objc.python_method
+    def _apply_titles(self, titles: dict):
+        """Name each Space after what b2omarchy has on that workspace."""
+        for key, title in (titles or {}).items():
+            try:
+                self.strip.set_title(int(key), title)
+            except (TypeError, ValueError):
+                continue
 
     def _strip_ready(self):
+        self._apply_titles(getattr(self, "_pending_titles", {}))
         if self.config.start_hidden:
             # Creating full-screen Spaces switches to them, so at login this
             # would dump the user into b2omarchy uninvited. Step back out and
@@ -317,10 +330,10 @@ class SwitcherDelegate(NSObject):
     # -- workspace tiles ---------------------------------------------------
 
     @objc.python_method
-    def _tile_captured(self, workspace_id: int, jpeg: bytes):
+    def _tile_captured(self, workspace_id: int, jpeg: bytes | None, title: str = ""):
         """Called on the control worker thread; hand off to the main thread."""
         with self._tiles_lock:
-            self._pending_tiles[workspace_id] = jpeg
+            self._pending_tiles[workspace_id] = (jpeg, title)
         self.performSelectorOnMainThread_withObject_waitUntilDone_(
             b"applyPendingTiles:", None, False
         )
@@ -331,8 +344,10 @@ class SwitcherDelegate(NSObject):
         with self._tiles_lock:
             pending = dict(self._pending_tiles)
             self._pending_tiles.clear()
-        for workspace_id, jpeg in pending.items():
-            if self.strip.set_tile(workspace_id, jpeg):
+        for workspace_id, (jpeg, title) in pending.items():
+            if title:
+                self.strip.set_title(workspace_id, title)
+            if jpeg and self.strip.set_tile(workspace_id, jpeg):
                 log.debug("updated tile for workspace %s", workspace_id)
 
     # -- signal handling ---------------------------------------------------
