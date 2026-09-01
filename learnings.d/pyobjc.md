@@ -71,6 +71,29 @@ source in `applicationDidFinishLaunching_`, where the current run loop is the
 main one, and keep a reference to both the tap and the source — dropping either
 stops delivery with no error.
 
+## Under launchd the environment is not your shell's
+
+Two things bit this project, both presenting as "works when I run it, broken
+when it starts at login":
+
+- **PATH is minimal** — `/usr/bin:/bin:/usr/sbin:/sbin`, with no Homebrew. A
+  bare `subprocess.run(["betterdisplaycli", ...])` resolves from a terminal and
+  raises `FileNotFoundError` from a LaunchAgent. Resolve helper binaries
+  explicitly rather than trusting the inherited PATH, and set PATH in the plist
+  as well.
+- **stdout redirection produced nothing.** `StandardOutPath`/`StandardErrorPath`
+  captured an empty file while the app ran correctly: same argv logged fine
+  from a shell, `lsof` showed both fds on the right inode, and a `/bin/sh`
+  probe agent redirected correctly. Never explained. A background agent should
+  own its log file rather than depend on the launcher capturing streams.
+
+Both failed *silently* in the sense that mattered — the app looked alive, and
+only a feature deep inside it was broken.
+
+Permissions are per-binary too: under launchd the responsible binary is
+`.venv/bin/python`, not your terminal, so Accessibility and Input Monitoring
+grants may need adding for that path specifically.
+
 ## Testing without a GUI
 
 Most logic can be pulled out into plain functions and tested normally — the

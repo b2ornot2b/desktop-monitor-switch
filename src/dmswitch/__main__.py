@@ -137,16 +137,14 @@ def _check(config: Config) -> int:
         )
         ok = False
 
-    from .monitor import MonitorSwitcher
+    from .monitor import resolve_cli
 
-    import shutil
-
-    if shutil.which(config.monitor.cli):
-        print(f"betterdisplay: {config.monitor.cli} found")
+    resolved = resolve_cli(config.monitor.cli)
+    if resolved:
+        print(f"betterdisplay: {resolved}")
     else:
         print(f"betterdisplay: {config.monitor.cli} NOT FOUND")
         ok = False
-    del MonitorSwitcher
 
     return 0 if ok else 1
 

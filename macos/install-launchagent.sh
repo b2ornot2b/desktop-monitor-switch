@@ -64,6 +64,11 @@ cat > "${PLIST}" <<EOF
     <dict>
         <key>PYTHONUNBUFFERED</key>
         <string>1</string>
+        <!-- launchd's default PATH is /usr/bin:/bin:/usr/sbin:/sbin, which
+             excludes Homebrew - so betterdisplaycli resolves from a shell but
+             not from here. The app also has its own fallbacks. -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 
     <key>RunAtLoad</key>
