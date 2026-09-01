@@ -101,3 +101,43 @@ class TestPlanWorkspaces:
         from dmswitch.spaces import plan_workspaces
 
         assert plan_workspaces([], taken=[], spares=2) == [1, 2]
+
+
+class TestCGPointInFrame:
+    """CG and Cocoa disagree about which way y grows.
+
+    Getting this wrong puts the pointer on the wrong display whenever the
+    screens are stacked vertically, which is this setup: the 49" is at Cocoa
+    (0,0) and the shared 34" sits above it at Cocoa y=1440.
+    """
+
+    MAIN_H = 1440.0
+    SHARED = FakeRect(787, 1440, 3440, 1440)   # the 34", above the main screen
+    MAIN = FakeRect(0, 0, 5120, 1440)          # the 49"
+
+    def test_point_on_the_shared_monitor(self):
+        from dmswitch.spaces import cg_point_in_frame
+
+        # Cocoa y 2000 (on the 34") is CG y -560.
+        assert cg_point_in_frame(2000, -560, self.SHARED, self.MAIN_H) is True
+
+    def test_point_on_the_main_monitor_is_not_shared(self):
+        from dmswitch.spaces import cg_point_in_frame
+
+        # Middle of the 49": CG (2000, 700) -> Cocoa y 740.
+        assert cg_point_in_frame(2000, 700, self.SHARED, self.MAIN_H) is False
+        assert cg_point_in_frame(2000, 700, self.MAIN, self.MAIN_H) is True
+
+    def test_naive_comparison_would_have_been_wrong(self):
+        from dmswitch.spaces import cg_point_in_frame
+
+        # A CG y of 1500 looks like it is inside the shared frame's Cocoa
+        # y-range (1440..2880) if compared directly, but it is really below
+        # the main screen and on neither.
+        assert cg_point_in_frame(2000, 1500, self.SHARED, self.MAIN_H) is False
+
+    def test_x_outside_the_shared_monitor(self):
+        from dmswitch.spaces import cg_point_in_frame
+
+        # Left of the 34", which starts at x=787.
+        assert cg_point_in_frame(100, -560, self.SHARED, self.MAIN_H) is False

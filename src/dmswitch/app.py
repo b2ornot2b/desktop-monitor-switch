@@ -23,7 +23,7 @@ from .capture import InputCapture
 from .config import Config
 from .monitor import MonitorSwitcher
 from .remote import ControlClient
-from .spaces import WorkspaceStrip, plan_workspaces
+from .spaces import WorkspaceStrip, cg_point_in_frame, plan_workspaces
 from .transport import EventSender
 
 log = logging.getLogger(__name__)
@@ -82,6 +82,7 @@ class SwitcherDelegate(NSObject):
             scroll_divisor=config.scroll_divisor,
             on_panic=self.panic,
             freeze_local_cursor=config.freeze_local_cursor,
+            pointer_is_remote=self.pointerIsOverSharedMonitor,
         )
         self.monitor = MonitorSwitcher(config.monitor, enabled=config.switch_monitor)
         self.strip = None
@@ -181,25 +182,20 @@ class SwitcherDelegate(NSObject):
             return
 
         workspace_id = self.strip.active_workspace_id()
-        app_active = bool(AppKit.NSApp().isActive())
         log.debug(
-            "reevaluate (%s): workspace=%s app_active=%s engaged=%s",
+            "reevaluate (%s): workspace=%s engaged=%s",
             reason,
             workspace_id,
-            app_active,
             self.engaged,
         )
 
-        # Both conditions matter: the right Space must be showing *and* we must
-        # be the app the user is actually working in.
-        if workspace_id is None or not app_active:
+        # Only the Space matters here. Whether input actually goes to
+        # b2omarchy is decided per event by where the pointer is, so the
+        # monitor can keep showing b2omarchy while this Mac is being used on
+        # the other display.
+        if workspace_id is None:
             if self.engaged:
-                log.info(
-                    "releasing because %s",
-                    "the strip Space is no longer showing"
-                    if workspace_id is None
-                    else "another app became active",
-                )
+                log.info("releasing because the strip Space is no longer showing")
             self.disengage()
             return
 
@@ -257,6 +253,24 @@ class SwitcherDelegate(NSObject):
         # a Space while the user is inside it would yank them sideways.
         if self.strip is not None and not self.strip.building:
             self._rebuild_strip()
+
+    @objc.python_method
+    def pointerIsOverSharedMonitor(self, location) -> bool:
+        """Whether the pointer is on the shared monitor right now.
+
+        Used to decide, per event, whether input belongs to b2omarchy or to
+        this Mac. Moving the pointer to the other display hands input back
+        without disturbing what the shared monitor is showing.
+        """
+        if self.strip is None or self.strip.screen is None:
+            return True
+        screens = AppKit.NSScreen.screens()
+        if not screens:
+            return True
+        main_height = screens[0].frame().size.height
+        return cg_point_in_frame(
+            location.x, location.y, self.strip.screen.frame(), main_height
+        )
 
     def panic(self):
         """Escape hatch: drop input forwarding and give the monitor back now."""
