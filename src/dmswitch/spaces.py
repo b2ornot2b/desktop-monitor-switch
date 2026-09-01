@@ -55,6 +55,22 @@ def plan_workspaces(
     return result
 
 
+def cg_point_in_frame(x: float, y: float, frame, main_height: float) -> bool:
+    """Whether a CoreGraphics event location falls inside a Cocoa screen frame.
+
+    The two coordinate systems disagree about which way is up: CG puts the
+    origin at the top left of the main display with y growing downwards, Cocoa
+    at the bottom left with y growing upwards. Comparing them directly places
+    the pointer on the wrong display whenever the screens are stacked
+    vertically, which is exactly this setup.
+    """
+    cocoa_y = main_height - y
+    return (
+        frame.origin.x <= x < frame.origin.x + frame.size.width
+        and frame.origin.y <= cocoa_y < frame.origin.y + frame.size.height
+    )
+
+
 def _same_screen(a, b) -> bool:
     """Whether two NSScreens are the same display.
 

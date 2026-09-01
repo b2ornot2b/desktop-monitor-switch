@@ -47,6 +47,15 @@ _EVENT_MASK = 0
 for _event in _CAPTURED_EVENTS:
     _EVENT_MASK |= Quartz.CGEventMaskBit(_event)
 
+# Forwarded but never suppressed, so the local cursor can always be moved off
+# the shared monitor onto the other display.
+_POINTER_MOTION = (
+    Quartz.kCGEventMouseMoved,
+    Quartz.kCGEventLeftMouseDragged,
+    Quartz.kCGEventRightMouseDragged,
+    Quartz.kCGEventOtherMouseDragged,
+)
+
 
 class InputCapture:
     """Owns the event tap and translates each event into evdev records."""
@@ -57,11 +66,16 @@ class InputCapture:
         scroll_divisor: float = 3.0,
         on_panic=None,
         freeze_local_cursor: bool = False,
+        pointer_is_remote=None,
     ):
         self.sender = sender
         self.scroll_divisor = scroll_divisor
         self.on_panic = on_panic
         self.freeze_local_cursor = freeze_local_cursor
+        # Given an event's location, says whether the pointer is over the
+        # shared monitor. Input follows the pointer: with two displays, the
+        # user must be able to move to the other one and keep using this Mac.
+        self.pointer_is_remote = pointer_is_remote
         self._tap = None
         self._source = None
         self._active = False
@@ -153,6 +167,18 @@ class InputCapture:
         if not self._active:
             return event
 
+        # Input follows the pointer. When it is over the other display the user
+        # is working on this Mac, so nothing is captured or forwarded - which
+        # is also the only way out: if clicks were swallowed everywhere, there
+        # would be no way to click a local window and take focus back.
+        if self.pointer_is_remote is not None:
+            try:
+                if not self.pointer_is_remote(Quartz.CGEventGetLocation(event)):
+                    return event
+            except Exception:
+                log.exception("could not locate the pointer; passing the event through")
+                return event
+
         try:
             if self._is_panic(event_type, event):
                 log.warning("panic combo pressed; releasing input")
@@ -167,7 +193,15 @@ class InputCapture:
             log.exception("error forwarding event; passing it through locally")
             return event
 
-        # Suppressing means the keystroke does not also land on the Mac.
+        # Pointer motion is forwarded but deliberately *not* suppressed: the
+        # local cursor has to keep moving so it can leave the shared monitor
+        # and reach the other display. The shared monitor is showing b2omarchy
+        # anyway, so the local cursor is invisible while it is over there.
+        if event_type in _POINTER_MOTION:
+            return event
+
+        # Everything else is suppressed, so the keystroke does not also land
+        # on whatever is behind on the Mac.
         return None if handled else event
 
     def _is_panic(self, event_type, event) -> bool:

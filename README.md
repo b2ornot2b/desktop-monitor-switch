@@ -48,6 +48,22 @@ real. Without them the strip dead-ends and swiping right silently does nothing.
 Spare ids skip anything in use on another output, since focusing such a
 workspace would drag focus to that monitor.
 
+### Two independent questions
+
+With two displays these are *not* the same thing, so they follow different
+signals:
+
+| | follows |
+|---|---|
+| which machine the **monitor shows** | which Space is on the shared monitor |
+| which machine **input goes to** | where the **pointer** is |
+
+So you can leave b2omarchy up on the shared monitor, move the pointer to the
+other display, and carry on using this Mac - keystrokes go wherever the
+pointer is. Pointer *motion* is forwarded but never suppressed, so the cursor
+can always be moved off the shared monitor; if clicks were swallowed
+everywhere there would be no way to click a local window and take focus back.
+
 ### Engaging
 
 The app puts a full-screen window on its own Space. macOS reports Space changes
