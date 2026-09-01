@@ -2,56 +2,42 @@
 
 ## Starting up
 
-Three things must be running, in order:
+b2omarchy runs two **systemd user units**, installed by `linux/install.sh`:
+
+| unit | what |
+|---|---|
+| `ydotoold.service` | owns the virtual input device |
+| `dmswitch-receiver.service` | relays input, answers workspace queries |
+
+Both are `WantedBy=graphical-session.target`, so they start with the desktop
+session and return after a reboot. Neither needs root: `/dev/uinput` is
+`root:input 0660` via the udev rule shipped with the ydotool package, and the
+user is in the `input` group.
 
 ```bash
-# 1. b2omarchy: the input daemon (numeric uid:gid - names fail silently)
-sudo ydotoold --socket-own=1001:992 --socket-perm=0660
-
-# 2. b2omarchy: the receiver
-nohup python3 ~/dmswitch_receiver.py --port 24810 > /tmp/dmswitch_receiver.log 2>&1 &
-
-# 3. b2umini: the app
-.venv/bin/python -m dmswitch -v
+ssh b2omarchy 'systemctl --user status ydotoold dmswitch-receiver'
+ssh b2omarchy 'journalctl --user -u dmswitch-receiver -f'
 ```
 
-Verify the first two before the third:
+Then on b2umini:
 
 ```bash
 .venv/bin/python -m dmswitch --check
+.venv/bin/python -m dmswitch -v
 ```
 
-## Not yet persistent
+Lingering is off, so the units start at *login* rather than at boot. That is
+what you want: the receiver needs a running compositor to talk to. Enable
+`loginctl enable-linger b2` only if that changes.
 
-Neither `ydotoold` nor the receiver survives a reboot — the Arch package ships
-no systemd unit. Until that is addressed, both need starting by hand after a
-restart. Sketches, untested:
+### Two things the units exist to work around
 
-```ini
-# /etc/systemd/system/ydotoold.service
-[Unit]
-Description=ydotool daemon
-[Service]
-ExecStart=/usr/bin/ydotoold --socket-own=1001:992 --socket-perm=0660
-Restart=always
-[Install]
-WantedBy=multi-user.target
-```
-
-```ini
-# ~/.config/systemd/user/dmswitch-receiver.service
-[Unit]
-Description=dmswitch receiver
-After=graphical-session.target
-[Service]
-ExecStart=/usr/bin/python3 %h/dmswitch_receiver.py --port 24810
-Restart=always
-[Install]
-WantedBy=graphical-session.target
-```
-
-The receiver needs the user session's environment to reach `hyprctl`, which is
-why it belongs as a user unit rather than a system one.
+- **ydotoold does not remove its socket when killed.** It then fails to bind on
+  the next start while still reporting itself as active, so everything gets
+  `ECONNREFUSED`. `ExecStartPre` clears the socket first.
+- **Its socket path follows `XDG_RUNTIME_DIR`**, so it differs between a
+  systemd unit (`/run/user/1001/`) and a plain SSH shell (`/tmp/`). Both units
+  pin the path with `%t` rather than relying on the default.
 
 ## Stopping
 

@@ -1,0 +1,25 @@
+[Unit]
+Description=ydotool daemon (virtual input device for dmswitch)
+Documentation=https://github.com/b2ornot2b/desktop-monitor-switch
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+# No root and no --socket-own: /dev/uinput is root:input 0660 via the udev rule
+# shipped with the ydotool package, and this user is in the input group, so the
+# socket is simply owned by whoever runs the daemon. Passing --socket-own with
+# *names* fails silently, so avoiding it entirely removes a whole failure mode.
+# ydotoold does not remove its socket when killed, and then silently fails
+# to bind on the next start while still reporting itself as running - so
+# every later connection gets ECONNREFUSED. Clear it first.
+ExecStartPre=-/usr/bin/rm -f %t/.ydotool_socket
+# %t is the runtime directory. Pin the path rather than relying on
+# ydotoold's default, which follows XDG_RUNTIME_DIR and so differs
+# between a systemd unit and a plain shell.
+ExecStart=/usr/bin/ydotoold --socket-path=%t/.ydotool_socket
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

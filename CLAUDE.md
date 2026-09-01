@@ -65,13 +65,19 @@ uv venv && uv pip install -e ".[dev]"
 `--no-forward` is the right way to try changes to Space or monitor logic
 without risking the keyboard.
 
-The receiver must be running on b2omarchy, and `ydotoold` under it:
+The receiver and `ydotoold` run as systemd user units on b2omarchy, installed
+by `linux/install.sh`, and come back with the graphical session:
 
 ```bash
-ssh b2omarchy 'nohup python3 ~/dmswitch_receiver.py --port 24810 &'
+ssh b2omarchy 'systemctl --user status ydotoold dmswitch-receiver'
 ```
 
-Neither survives a reboot yet — no systemd units.
+After changing `linux/dmswitch_receiver.py`, redeploy and restart it:
+
+```bash
+scp linux/dmswitch_receiver.py b2omarchy:~/.local/bin/
+ssh b2omarchy 'systemctl --user restart dmswitch-receiver'
+```
 
 ## Testing against real hardware
 

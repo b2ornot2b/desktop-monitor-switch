@@ -1,0 +1,18 @@
+[Unit]
+Description=dmswitch receiver (input relay and workspace control for b2umini)
+Documentation=https://github.com/b2ornot2b/desktop-monitor-switch
+# The daemon owns the virtual device this relays into.
+Requires=ydotoold.service
+After=ydotoold.service graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+# A user unit, not a system one: it shells out to hyprctl, which needs the
+# session's XDG_RUNTIME_DIR to find the running compositor.
+ExecStart=/usr/bin/python3 %h/.local/bin/dmswitch_receiver.py --port 24810 --ydotool-socket %t/.ydotool_socket
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target
