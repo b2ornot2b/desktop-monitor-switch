@@ -100,6 +100,8 @@ class SwitcherDelegate(NSObject):
         self._tiles_lock = threading.Lock()
         self.control.set_tile_handler(self._tile_captured)
         self.control.tile_scale = config.tile_scale
+        self.control.tile_quality = config.tile_quality
+        self.control.tile_format = config.tile_format
         return self
 
     # -- lifecycle ---------------------------------------------------------

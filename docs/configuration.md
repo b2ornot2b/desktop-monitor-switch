@@ -67,7 +67,9 @@ defaults read pro.betterdisplay.BetterDisplay 'ddcCustomInputSources@Display:2' 
 | `forward_input` | `true` | set `false` to watch Space transitions without ever capturing input |
 | `freeze_local_cursor` | `false` | see the warning below |
 | `spare_workspaces` | `2` | empty Spaces kept past the last real workspace |
-| `tile_scale` | `0.25` | snapshot size for Space backgrounds, as a fraction of the output |
+| `tile_scale` | `1.0` | snapshot size for Space backgrounds, as a fraction of the output |
+| `tile_quality` | `90` | JPEG quality, 1-100 |
+| `tile_format` | `jpeg` | `jpeg` or `png` (lossless) |
 | `scroll_divisor` | `3.0` | wheel detents per macOS scroll unit |
 
 ### `freeze_local_cursor`
@@ -84,9 +86,22 @@ only if the pointer is observed drifting, and be aware of the failure mode.
 ### `tile_scale`
 
 Each Space shows a snapshot of the b2omarchy workspace it maps to, so Mission
-Control shows something recognisable instead of black squares. `0.25` gives
-860×360 at roughly 15 KB and about 200 ms round trip; `0.5` is sharper at
-around 40 KB.
+Control shows something recognisable instead of black squares.
+
+Full size by default, because the Space is displayed at the monitor's native
+resolution and anything smaller is visibly upscaled. Scaling down is also
+*slower*, not faster - it costs CPU that the capture itself does not:
+
+| scale | format | size | capture | round trip |
+|---|---|---|---|---|
+| 0.25 | jpeg q55 | 15 KB | 183 ms | 205 ms |
+| 1.0 | jpeg q75 | 509 KB | 57 ms | 91 ms |
+| **1.0** | **jpeg q90** | **765 KB** | **61 ms** | **110 ms** |
+| 1.0 | png | 1.05 MB | 282 ms | 352 ms |
+
+These snapshots are mostly text, which is where JPEG artefacts are most
+visible, hence the high default quality. Set `tile_format` to `png` for
+lossless at roughly 3× the capture time.
 
 Snapshots are taken as you visit a workspace and when you leave the strip, so a
 tile shows that workspace **as you last saw it**. `grim` can only photograph

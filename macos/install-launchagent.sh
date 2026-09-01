@@ -105,7 +105,7 @@ say "loaded ${LABEL}"
 
 sleep 3
 if launchctl print "gui/$(id -u)/${LABEL}" >/dev/null 2>&1; then
-    say "state: $(launchctl print "gui/$(id -u)/${LABEL}" | awk '/state = /{print $3}')"
+    say "state: $(launchctl print "gui/$(id -u)/${LABEL}" | awk '/state = /{print $3; exit}')"
 fi
 
 cat <<EOF
