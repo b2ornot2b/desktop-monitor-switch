@@ -7,25 +7,62 @@ the running app.
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 import subprocess
 
 from .config import MonitorConfig
 
 log = logging.getLogger(__name__)
 
+# Where the CLI usually lives, plus the app binary it is only a wrapper around.
+# launchd hands a process a minimal PATH - /usr/bin:/bin:/usr/sbin:/sbin - so a
+# bare name resolves fine from a shell and not at all from a LaunchAgent.
+FALLBACK_CLI_PATHS = (
+    "/opt/homebrew/bin/betterdisplaycli",
+    "/usr/local/bin/betterdisplaycli",
+    "/Applications/BetterDisplay.app/Contents/MacOS/BetterDisplay",
+)
+
+
+def resolve_cli(name: str) -> str | None:
+    """Find the BetterDisplay CLI, without depending on the inherited PATH."""
+    if os.path.sep in name:
+        return name if os.path.exists(name) else None
+
+    found = shutil.which(name)
+    if found:
+        return found
+
+    for candidate in FALLBACK_CLI_PATHS:
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
 
 class MonitorSwitcher:
     def __init__(self, config: MonitorConfig, enabled: bool = True):
         self.config = config
         self.enabled = enabled
+        self._resolved = resolve_cli(config.cli)
+        if self._resolved and self._resolved != config.cli:
+            log.info("using %s", self._resolved)
 
     def _set_input(self, value: int) -> bool:
         if not self.enabled:
             log.info("monitor switching disabled; would have set input %s", value)
             return True
 
+        if self._resolved is None:
+            log.error(
+                "%s not found. Is BetterDisplay installed? Note launchd provides a "
+                "minimal PATH, so it may resolve from a shell but not from the agent.",
+                self.config.cli,
+            )
+            return False
+
         cmd = [
-            self.config.cli,
+            self._resolved,
             "set",
             f"--tagID={self.config.tag_id}",
             f"--ddcAlt={value}",
@@ -34,7 +71,7 @@ class MonitorSwitcher:
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         except FileNotFoundError:
-            log.error("%s not found; is BetterDisplay installed?", self.config.cli)
+            log.error("%s vanished between resolving and running it", self._resolved)
             return False
         except subprocess.TimeoutExpired:
             log.error("timed out running %s", " ".join(cmd))
