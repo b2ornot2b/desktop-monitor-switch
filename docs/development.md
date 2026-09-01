@@ -94,6 +94,8 @@ back.
 
 ## Open work
 
+- The Mac side has no reboot test equivalent to the Linux one; the
+  LaunchAgent is verified by loading it, not by signing out and in
 - The strip resyncs only when you leave it, so a workspace created on
   b2omarchy while you are inside is unreachable until you leave and return
 - Workspace 3 is skipped because it lives on a headless output; making the
