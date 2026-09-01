@@ -1,0 +1,117 @@
+# Architecture
+
+## The problem
+
+Two machines share one monitor. `b2umini` (macOS) owns the keyboard and
+trackpad; `b2omarchy` (Arch Linux, Hyprland) has no input devices of its own.
+Switching between them meant reaching for the monitor's input menu and having
+no way to drive the Linux box at all.
+
+## The shape of the solution
+
+```
+   b2umini (macOS)                              b2omarchy (Arch/Hyprland)
+   ┌──────────────────────────┐   TCP :24810    ┌──────────────────────────┐
+   │ dmswitch                 │  EVT: events    │ dmswitch_receiver.py     │
+   │  ├─ a Space per omarchy  │ ──────────────► │  ├─ held-key watchdog    │
+   │  │   workspace           │  CTL: json      │  ├─ relays to ydotoold   │
+   │  ├─ CGEventTap capture   │ ◄──────────────►│  └─ hyprctl workspaces   │
+   │  └─ betterdisplaycli     │                 │            ▼             │
+   └───────────┬──────────────┘                 │      /dev/uinput         │
+               │ DDC                            └──────────────────────────┘
+               ▼
+        shared LG 3440x1440  ── HDMI 1: b2umini · HDMI 2: b2omarchy
+```
+
+## Two independent questions
+
+The central design decision. With two displays these are *not* the same thing:
+
+| | follows | why |
+|---|---|---|
+| which machine the **monitor shows** | which Space is on the shared monitor | you swipe to change what you are looking at |
+| which machine **input goes to** | where the **pointer** is | you may want to use the Mac on the other display while b2omarchy stays on screen |
+
+An earlier version tied both to the Space. That made it impossible to work on
+the second display: keystrokes kept going to b2omarchy, and because clicks were
+suppressed too, clicking a local window never landed, focus never changed, and
+the state sustained itself.
+
+## One Space per workspace
+
+Each b2omarchy workspace gets its own full-screen macOS Space, so the two
+machines' desktops form a single strip:
+
+```
+[mac 1] [mac 2] … [mac last] │ [ws1] [ws2] [spare] [spare]
+                             ↑ swipe left from ws1 returns to the Mac
+```
+
+Swiping is left entirely to macOS. The app observes which of its windows is on
+the active Space and tells b2omarchy to match.
+
+This is not a stylistic choice. macOS handles the Space-switch gesture from the
+raw touch stream, above event taps — a tap can see it but **cannot suppress
+it**. Rather than fight that, the gesture is given something useful to switch
+between, and the edge behaviour comes for free.
+
+Two spare Spaces sit past the last real workspace so there is always somewhere
+to swipe into; Hyprland creates a workspace when one is focused. Spare ids skip
+anything in use on another output, since focusing such a workspace would drag
+focus to that monitor.
+
+## Components
+
+| module | responsibility |
+|---|---|
+| `app.py` | the delegate: owns the strip, decides engage/disengage, maps Space → workspace |
+| `spaces.py` | builds and tracks the full-screen windows; screen geometry and workspace planning |
+| `capture.py` | the CGEventTap: what to forward, what to suppress, where the pointer is |
+| `transport.py` | TCP client for input events, with held-key tracking |
+| `remote.py` | TCP client for the control channel, with a worker thread for focus |
+| `monitor.py` | `betterdisplaycli` wrapper for the DDC input switch |
+| `evdev.py` | wire format and the macOS → Linux keycode map |
+| `single_instance.py` | flock'd pid file; two copies fight over the keyboard |
+| `linux/dmswitch_receiver.py` | the far side: relays input, answers workspace queries |
+
+## What happens on engage
+
+1. A strip Space becomes active on the shared monitor.
+2. The event tap is enabled and an event connection opens.
+3. `wake` tells b2omarchy to bring its output out of DPMS — it sleeps while the
+   monitor is showing the Mac, so switching the input would otherwise land on a
+   display sending no picture.
+4. `betterdisplaycli` switches the monitor to b2omarchy's input.
+5. The active Space's workspace id is sent as a `focus` command.
+
+If the monitor switch fails, forwarding is stopped rather than leaving someone
+looking at the Mac with a keyboard that talks to the other machine.
+
+## Safety properties
+
+Handing over your only keyboard deserves more than one way back:
+
+- **Pointer to the other display** — input returns to the Mac immediately
+- **Swipe left off the front** — releases monitor and input
+- **`Ctrl+Opt+Cmd+Esc`** — panic, never forwarded or suppressed
+- **`Cmd+Q` / `Ctrl+C`** — quit, via an explicit menu and a signal-polling timer
+- **Held-key release** — both ends track pressed keys and release them on
+  disconnect, so the remote machine is never left with a stuck modifier it has
+  no keyboard to clear
+- **Single instance** — a flock'd pid file; two copies would each build a strip
+  and install a tap
+
+Pointer motion is forwarded but never suppressed, so the cursor can always
+leave the shared monitor. That display is showing b2omarchy anyway, so the
+local cursor is invisible while it is over there.
+
+## Deliberate non-choices
+
+- **No gesture interception** — impossible for Space gestures; see
+  `learnings.d/macos-event-taps.md`
+- **No private Spaces APIs** — `NSWindow.isOnActiveSpace` and the NSWorkspace
+  notification are public and sufficient
+- **No Deskflow** — cannot be triggered programmatically, and its Wayland
+  client cannot run on Hyprland; see `learnings.d/deskflow-dead-end.md`
+- **TCP, not UDP** — a dropped key-release strands a key on a machine with no
+  keyboard

@@ -8,3 +8,6 @@ build/
 .pytest_cache/
 .DS_Store
 *.log
+
+# macOS AppleDouble sidecars, created on filesystems without native xattrs
+._*
