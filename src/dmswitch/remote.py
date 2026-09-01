@@ -10,11 +10,13 @@ Cocoa run loop while the user is mid-swipe.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import queue
 import socket
 import threading
+import time
 
 from .config import RemoteConfig
 
@@ -34,6 +36,8 @@ class ControlClient:
         self._queue: queue.Queue = queue.Queue()
         self._worker: threading.Thread | None = None
         self._stop = threading.Event()
+        self._tile_handler = None
+        self.tile_scale = 0.25
 
     # -- connection --------------------------------------------------------
 
@@ -98,6 +102,18 @@ class ControlClient:
         """Workspace ids on the shared monitor, and which is active."""
         return self.request({"cmd": "workspaces"})
 
+    def capture(self, scale: float = 0.25) -> bytes | None:
+        """A JPEG of whatever b2omarchy is currently showing, or None."""
+        response = self.request({"cmd": "capture", "scale": scale}, timeout=12)
+        if not response.get("ok"):
+            log.debug("capture unavailable: %s", response.get("error"))
+            return None
+        try:
+            return base64.b64decode(response["image"])
+        except (KeyError, ValueError) as exc:
+            log.warning("could not decode captured tile: %s", exc)
+            return None
+
     def wake(self) -> dict:
         """Wake b2omarchy's output so the monitor has a signal to show."""
         return self.request({"cmd": "wake"})
@@ -118,12 +134,27 @@ class ControlClient:
         self.start_worker()
         self._queue.put(workspace_id)
 
+    def set_tile_handler(self, handler) -> None:
+        """Called from the worker thread with (workspace_id, jpeg_bytes)."""
+        self._tile_handler = handler
+
+    def capture_async(self, workspace_id: int) -> None:
+        """Refresh the tile for a workspace off the run loop."""
+        self.start_worker()
+        self._queue.put(("capture", workspace_id))
+
     def _run_worker(self) -> None:
         while not self._stop.is_set():
             item = self._queue.get()
             if item is None:
                 break
-            # If several swipes queued up, only the last one matters.
+
+            if isinstance(item, tuple) and item[0] == "capture":
+                self._do_capture(item[1])
+                continue
+
+            # If several swipes queued up, only the last one matters: walking
+            # through every workspace in between would be visible and slow.
             latest = item
             while True:
                 try:
@@ -133,9 +164,23 @@ class ControlClient:
                 if nxt is None:
                     self._queue.put(None)
                     break
+                if isinstance(nxt, tuple):
+                    continue
                 latest = nxt
+
             response = self.request({"cmd": "focus", "id": latest})
             if not response.get("ok"):
                 log.error("workspace focus failed: %s", response.get("error"))
-            else:
-                log.info("b2omarchy now on workspace %s", response.get("active"))
+                continue
+            log.info("b2omarchy now on workspace %s", response.get("active"))
+            # Let the compositor finish drawing before photographing it.
+            time.sleep(0.5)
+            self._do_capture(latest)
+
+    def _do_capture(self, workspace_id: int) -> None:
+        if self._tile_handler is None:
+            return
+        image = self.capture(scale=self.tile_scale)
+        if image:
+            log.debug("tile for workspace %s: %d bytes", workspace_id, len(image))
+            self._tile_handler(workspace_id, image)

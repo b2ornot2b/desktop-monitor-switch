@@ -60,6 +60,11 @@ class Config:
     # hand the monitor to b2omarchy the moment you sign in.
     start_hidden: bool = False
 
+    # How large a snapshot to fetch for the Space backgrounds, as a
+    # fraction of the real output. 0.25 gives 860x360 at about 15 KB,
+    # which is plenty for a Mission Control thumbnail.
+    tile_scale: float = 0.25
+
     # Scroll wheel detents per macOS scroll unit.
     scroll_divisor: float = 3.0
 
@@ -83,6 +88,7 @@ class Config:
             freeze_local_cursor=raw.get("freeze_local_cursor", False),
             spare_workspaces=raw.get("spare_workspaces", 2),
             start_hidden=raw.get("start_hidden", False),
+            tile_scale=raw.get("tile_scale", 0.25),
             scroll_divisor=raw.get("scroll_divisor", 3.0),
         )
 

@@ -60,6 +60,25 @@ to swipe into; Hyprland creates a workspace when one is focused. Spare ids skip
 anything in use on another output, since focusing such a workspace would drag
 focus to that monitor.
 
+## Workspace tiles
+
+Each Space shows a snapshot of the b2omarchy workspace it maps to, so Mission
+Control shows something recognisable rather than black squares. The receiver
+runs `grim` on the shared output and returns a small JPEG over the control
+channel.
+
+`grim` can only photograph what an output is *currently displaying*, so
+background workspaces cannot be captured. Snapshots are therefore taken as you
+visit a workspace, and again as you leave the strip, and each Space keeps the
+last one — the same "as you last saw it" behaviour Mission Control uses for its
+own hidden Spaces.
+
+Two constraints the receiver has to respect: `grim` **blocks indefinitely** on a
+DPMS-off output, so the display state is checked before capturing rather than
+discovered by hanging, and the subprocess is given a timeout regardless.
+Captures run on the control worker thread and are applied to the windows on the
+main thread, since AppKit is not thread safe.
+
 ## Components
 
 | module | responsibility |

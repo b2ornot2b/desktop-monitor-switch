@@ -22,6 +22,7 @@ import logging
 
 import AppKit
 import objc
+from Foundation import NSData
 from Foundation import NSObject
 
 log = logging.getLogger(__name__)
@@ -116,6 +117,8 @@ class WorkspaceStrip:
         self.on_ready = on_ready
         self.windows: list = []
         self.workspace_ids: list[int] = []
+        self.image_views: dict[int, object] = {}
+        self.labels: dict[int, object] = {}
         self._delegate = StripWindowDelegate.alloc().initWithCallback_(
             self._window_entered_full_screen
         )
@@ -169,6 +172,18 @@ class WorkspaceStrip:
         window.setDelegate_(self._delegate)
         window.setReleasedWhenClosed_(False)
 
+        # Behind everything: the last snapshot of this workspace, so the
+        # Space is recognisable in Mission Control instead of a black square.
+        image_view = AppKit.NSImageView.alloc().initWithFrame_(
+            AppKit.NSMakeRect(0, 0, frame.size.width, frame.size.height)
+        )
+        image_view.setImageScaling_(AppKit.NSImageScaleProportionallyUpOrDown)
+        image_view.setAutoresizingMask_(
+            AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable
+        )
+        window.contentView().addSubview_(image_view)
+        self.image_views[workspace_id] = image_view
+
         label = AppKit.NSTextField.alloc().initWithFrame_(
             AppKit.NSMakeRect(0, frame.size.height / 2 - 60, frame.size.width, 120)
         )
@@ -184,6 +199,7 @@ class WorkspaceStrip:
         label.setTextColor_(AppKit.NSColor.secondaryLabelColor())
         label.setFont_(AppKit.NSFont.systemFontOfSize_(28))
         window.contentView().addSubview_(label)
+        self.labels[workspace_id] = label
 
         # objc associates the id with the window so lookups stay simple.
         window.setIdentifier_(str(workspace_id))
@@ -230,8 +246,32 @@ class WorkspaceStrip:
                 log.debug("failed to close a strip window", exc_info=True)
         self.windows = []
         self.workspace_ids = []
+        self.image_views = {}
+        self.labels = {}
         self._pending = []
         self.building = False
+
+    def set_tile(self, workspace_id: int, jpeg: bytes) -> bool:
+        """Show a snapshot as the background of a workspace's Space.
+
+        Must be called on the main thread: AppKit is not thread safe, and the
+        capture arrives on the control worker.
+        """
+        view = self.image_views.get(workspace_id)
+        if view is None:
+            return False
+        data = NSData.dataWithBytes_length_(jpeg, len(jpeg))
+        image = AppKit.NSImage.alloc().initWithData_(data)
+        if image is None:
+            log.warning("workspace %s tile was not a usable image", workspace_id)
+            return False
+        view.setImage_(image)
+        # The caption is only there to explain an empty Space; once there is a
+        # picture it just gets in the way.
+        label = self.labels.get(workspace_id)
+        if label is not None:
+            label.setHidden_(True)
+        return True
 
     # -- queries -----------------------------------------------------------
 

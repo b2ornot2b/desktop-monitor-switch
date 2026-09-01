@@ -67,6 +67,7 @@ defaults read pro.betterdisplay.BetterDisplay 'ddcCustomInputSources@Display:2' 
 | `forward_input` | `true` | set `false` to watch Space transitions without ever capturing input |
 | `freeze_local_cursor` | `false` | see the warning below |
 | `spare_workspaces` | `2` | empty Spaces kept past the last real workspace |
+| `tile_scale` | `0.25` | snapshot size for Space backgrounds, as a fraction of the output |
 | `scroll_divisor` | `3.0` | wheel detents per macOS scroll unit |
 
 ### `freeze_local_cursor`
@@ -79,6 +80,18 @@ cursor stays frozen for the entire login session, with no obvious remedy for
 whoever is sitting there. It is off by default because suppressing motion
 events already keeps the local pointer still where that is wanted. Turn it on
 only if the pointer is observed drifting, and be aware of the failure mode.
+
+### `tile_scale`
+
+Each Space shows a snapshot of the b2omarchy workspace it maps to, so Mission
+Control shows something recognisable instead of black squares. `0.25` gives
+860×360 at roughly 15 KB and about 200 ms round trip; `0.5` is sharper at
+around 40 KB.
+
+Snapshots are taken as you visit a workspace and when you leave the strip, so a
+tile shows that workspace **as you last saw it**. `grim` can only photograph
+what an output is currently displaying, so background workspaces cannot be
+captured, and nothing can be captured while the output is asleep.
 
 ### `spare_workspaces`
 
