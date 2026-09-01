@@ -94,7 +94,6 @@ back.
 
 ## Open work
 
-- No systemd units — `ydotoold` and the receiver do not survive a reboot
 - The strip resyncs only when you leave it, so a workspace created on
   b2omarchy while you are inside is unreachable until you leave and return
 - Workspace 3 is skipped because it lives on a headless output; making the

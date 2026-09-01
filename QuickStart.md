@@ -12,27 +12,25 @@ Getting `dmswitch` running, and knowing how to stop it.
   Monitoring alone is not enough: without Accessibility the event tap is
   downgraded to listen-only, and keystrokes reach *both* machines.
 
-## 1. Start the input daemon on b2omarchy
+## 1. Install the b2omarchy side
+
+Copy the `linux/` directory over and run the installer. No root needed — it
+installs two **systemd user units**, so the receiver and `ydotoold` come back
+with your graphical session after a reboot.
 
 ```bash
-sudo ydotoold --socket-own=1001:992 --socket-perm=0660
+scp -r linux b2omarchy:~/dmswitch-install
+ssh b2omarchy '~/dmswitch-install/install.sh'
 ```
 
-Use **numeric** uid:gid. Passing names (`b2:input`) fails *silently* — the
-socket stays root-owned and every later step looks fine until nothing happens.
-Check with `ls -l /tmp/.ydotool_socket`; it should read `b2 input`.
-
-## 2. Start the receiver on b2omarchy
+It checks that `ydotoold` is present and that you are in the `input` group,
+then enables both services. Verify any time with:
 
 ```bash
-scp linux/dmswitch_receiver.py b2omarchy:~/
-ssh b2omarchy 'nohup python3 ~/dmswitch_receiver.py --port 24810 > /tmp/dmswitch_receiver.log 2>&1 &'
+ssh b2omarchy 'systemctl --user status ydotoold dmswitch-receiver'
 ```
 
-Stdlib only, so nothing to install. Neither this nor `ydotoold` survives a
-reboot yet.
-
-## 3. Install and check on b2umini
+## 2. Install and check on b2umini
 
 ```bash
 uv venv && uv pip install -e ".[dev]"
@@ -47,7 +45,7 @@ input access:  granted
 betterdisplay: betterdisplaycli found
 ```
 
-## 4. First run — without touching your keyboard
+## 3. First run — without touching your keyboard
 
 ```bash
 .venv/bin/python -m dmswitch --no-forward -v

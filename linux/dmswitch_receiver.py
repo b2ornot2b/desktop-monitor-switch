@@ -48,7 +48,15 @@ HANDSHAKE_SIZE = 4
 HANDSHAKE_EVENTS = b"EVT\n"
 HANDSHAKE_CONTROL = b"CTL\n"
 
-DEFAULT_YDOTOOL_SOCKET = "/tmp/.ydotool_socket"
+def _default_ydotool_socket() -> str:
+    """Where ydotoold puts its socket.
+
+    It follows XDG_RUNTIME_DIR when that is set and falls back to /tmp,
+    so the path differs between a systemd user unit and a bare SSH shell.
+    Matching that behaviour avoids looking in the wrong place.
+    """
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    return f"{runtime}/.ydotool_socket" if runtime else "/tmp/.ydotool_socket"
 DEFAULT_MONITOR = "HDMI-A-1"
 
 log = logging.getLogger("dmswitch-receiver")
@@ -254,11 +262,25 @@ class YdotoolSink:
         log.info("connected to ydotoold at %s", self.path)
 
     def send(self, record: bytes) -> None:
+        """Relay one record, reconnecting if ydotoold has restarted.
+
+        Deliberately does not raise: ydotoold restarting underneath us should
+        cost a few dropped events, not take the receiver down with it.
+        """
         with self._lock:
             if self._sock is None:
-                self.connect()
+                try:
+                    self.connect()
+                except OSError as exc:
+                    log.warning("ydotoold unreachable (%s); dropping event", exc)
+                    return
             assert self._sock is not None
-            self._sock.send(record)
+            try:
+                self._sock.send(record)
+            except OSError as exc:
+                log.warning("ydotoold send failed (%s); will reconnect", exc)
+                self._sock.close()
+                self._sock = None
 
     def close(self) -> None:
         if self._sock is not None:
@@ -373,14 +395,15 @@ def serve(host: str, port: int, socket_path: str, monitor: str) -> int:
     try:
         sink.connect()
     except OSError as exc:
-        log.error(
-            "cannot reach ydotoold at %s (%s). Start it with:\n"
-            "  sudo ydotoold --socket-own=$(id -u):$(getent group input | cut -d: -f3) "
-            "--socket-perm=0660",
+        # Not fatal: under systemd this may simply start before ydotoold, and
+        # exiting here would turn an ordering race into a restart loop. The
+        # sink reconnects on first use.
+        log.warning(
+            "ydotoold not reachable yet at %s (%s); will connect when it appears. "
+            "If this persists, check: systemctl --user status ydotoold",
             socket_path,
             exc,
         )
-        return 1
 
     hypr = Hyprland(monitor)
     hypr.signature()  # resolve early so problems are visible at startup
@@ -437,7 +460,7 @@ def main() -> int:
     parser.add_argument("--host", default="0.0.0.0", help="bind address")
     parser.add_argument("--port", type=int, default=24810, help="listen port")
     parser.add_argument(
-        "--ydotool-socket", default=DEFAULT_YDOTOOL_SOCKET, help="ydotoold socket path"
+        "--ydotool-socket", default=_default_ydotool_socket(), help="ydotoold socket path"
     )
     parser.add_argument(
         "--monitor", default=DEFAULT_MONITOR, help="the shared monitor's output name"
