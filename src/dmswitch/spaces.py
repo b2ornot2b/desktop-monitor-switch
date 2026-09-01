@@ -167,6 +167,27 @@ class WorkspaceStrip:
         self._pending = list(self.windows)
         self._enter_next_full_screen()
 
+    def extend(self, workspace_ids: list[int]) -> None:
+        """Add Spaces for new workspaces without disturbing the existing ones.
+
+        Rebuilding the whole strip tears every window down, which destroys the
+        user's Spaces and re-adds them at the end of the order. Since visiting
+        a spare makes Hyprland create that workspace - changing the id set and
+        so the plan - a rebuild-on-change policy churns constantly. Appending
+        only keeps the strip stable.
+        """
+        new_ids = [w for w in workspace_ids if w not in self.workspace_ids]
+        if not new_ids:
+            return
+        log.info("adding Space(s) for workspace(s) %s", new_ids)
+        self.building = True
+        for workspace_id in new_ids:
+            self.workspace_ids.append(workspace_id)
+            window = self._make_window(workspace_id)
+            self.windows.append(window)
+            self._pending.append(window)
+        self._enter_next_full_screen()
+
     def _make_window(self, workspace_id: int):
         frame = self.screen.frame()
         # initWithContentRect:...screen: measures the rect from the *screen's*

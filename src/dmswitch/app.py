@@ -167,11 +167,22 @@ class SwitcherDelegate(NSObject):
             )
 
         titles = (state.get("titles") or {}) if state.get("ok") else {}
-        if self.strip.matches(workspace_ids) and self.strip.windows:
-            self._apply_titles(titles)
+        existing = (state.get("workspaces") or []) if state.get("ok") else []
+
+        if not self.strip.windows:
+            self.strip.build(workspace_ids)
+            self._pending_titles = titles
             return
-        self.strip.build(workspace_ids)
-        self._pending_titles = titles
+
+        # Never tear the strip down once it exists: that destroys the user's
+        # Spaces and re-adds them at the end of the order. Only add Spaces for
+        # real workspaces that have none yet - spare slots shifting around is
+        # not a reason to touch anything.
+        covered = set(self.strip.workspace_ids)
+        missing = [w for w in existing if w not in covered]
+        if missing:
+            self.strip.extend(missing)
+        self._apply_titles(titles)
 
     @objc.python_method
     def _apply_titles(self, titles: dict):
