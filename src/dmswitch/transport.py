@@ -1,4 +1,4 @@
-"""Ships packed input_event records to the receiver on b2omarchy.
+"""Ships packed input_event records to the receiver on the remote machine.
 
 TCP rather than UDP on purpose: a dropped key-release datagram leaves a key
 stuck down on the far machine, which is much worse than a little latency.
@@ -26,7 +26,7 @@ class EventSender:
     """A reconnecting TCP client that also tracks what it has pressed.
 
     Tracking matters: whenever forwarding stops - cleanly or because the link
-    died - anything still held down has to be released, or b2omarchy is left
+    died - anything still held down has to be released, or the remote machine is left
     with a stuck modifier and no keyboard of its own to clear it.
     """
 
@@ -92,7 +92,13 @@ class EventSender:
                 return False
 
     def send_key(self, linux_key: int, pressed: bool) -> bool:
-        self._track(evdev.EV_KEY, linux_key, pressed)
+        # Tracked under the same lock the socket uses. Key events arrive on the
+        # event-tap callback while stop() can call release_all() from the main
+        # thread; an unlocked update there can lose a release, which strands a
+        # modifier on a machine with no keyboard of its own - the exact failure
+        # this bookkeeping exists to prevent.
+        with self._lock:
+            self._track_locked(evdev.EV_KEY, linux_key, pressed)
         return self._send_raw(evdev.key_event(linux_key, pressed))
 
     def send_move(self, dx: int, dy: int) -> bool:
@@ -101,7 +107,8 @@ class EventSender:
     def send_scroll(self, dx: int, dy: int) -> bool:
         return self._send_raw(evdev.scroll(dx, dy))
 
-    def _track(self, ev_type: int, code: int, pressed: bool) -> None:
+    def _track_locked(self, ev_type: int, code: int, pressed: bool) -> None:
+        """Caller must hold ``self._lock``."""
         key = (ev_type, code)
         if pressed:
             self._pressed.add(key)

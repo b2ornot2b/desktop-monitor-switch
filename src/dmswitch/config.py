@@ -1,4 +1,4 @@
-"""Configuration, with defaults matching this setup (b2umini <-> b2omarchy)."""
+"""Configuration, with defaults matching this setup (this Mac <-> the remote machine)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,18 @@ CONFIG_PATH = Path(
 
 
 @dataclass
+class ScreenConfig:
+    """Which Mac display is the shared one.
+
+    Matched by size because display ids are not stable across reconnects.
+    Leave both at 0 to fall back to the main screen.
+    """
+
+    width: int = 0
+    height: int = 0
+
+
+@dataclass
 class MonitorConfig:
     """How to drive the shared monitor's input source via BetterDisplay.
 
@@ -22,17 +34,24 @@ class MonitorConfig:
     """
 
     tag_id: int = 2
-    local_input: int = 144  # "HDMI 1 (LG alt)" -> b2umini
-    remote_input: int = 145  # "HDMI 2 (LG alt)" -> b2omarchy
+    local_input: int = 144  # "HDMI 1 (LG alt)" -> this Mac
+    remote_input: int = 145  # "HDMI 2 (LG alt)" -> the remote machine
     cli: str = "betterdisplaycli"
+    # The DDC feature to set. A symbolic name such as "inputSelectAlt" uses
+    # LG's alternate addressing (--ddcAlt); a raw code such as "0x60" uses
+    # standard DDC input select (--ddc), where HDMI 1/2 are values 17/18.
     vcp: str = "inputSelectAlt"
+
+    @property
+    def uses_alt_addressing(self) -> bool:
+        return not self.vcp.lower().startswith("0x")
 
 
 @dataclass
 class RemoteConfig:
-    """Where the receiver on b2omarchy is listening."""
+    """Where the receiver on the remote machine is listening."""
 
-    host: str = "b2omarchy"
+    host: str = "linux-host"
     port: int = 24810
     connect_timeout: float = 2.0
 
@@ -41,6 +60,11 @@ class RemoteConfig:
 class Config:
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     remote: RemoteConfig = field(default_factory=RemoteConfig)
+    screen: ScreenConfig = field(default_factory=ScreenConfig)
+
+    # Shown on each Space, e.g. "linux: vim". Name the machine you are
+    # switching to so the Spaces are identifiable in Mission Control.
+    remote_label: str = "remote"
 
     # Switch the monitor input as well as forwarding input. Turning this off is
     # useful when testing forwarding on its own.
@@ -57,7 +81,7 @@ class Config:
 
     # Build the strip without pulling the user into it. Creating a
     # full-screen Space switches to it, so at login this would otherwise
-    # hand the monitor to b2omarchy the moment you sign in.
+    # hand the monitor to the remote machine the moment you sign in.
     start_hidden: bool = False
 
     # Snapshot size for the Space backgrounds, as a fraction of the real
@@ -90,6 +114,8 @@ class Config:
         return cls(
             monitor=MonitorConfig(**raw.get("monitor", {})),
             remote=RemoteConfig(**raw.get("remote", {})),
+            screen=ScreenConfig(**raw.get("screen", {})),
+            remote_label=raw.get("remote_label", "remote"),
             switch_monitor=raw.get("switch_monitor", True),
             forward_input=raw.get("forward_input", True),
             freeze_local_cursor=raw.get("freeze_local_cursor", False),

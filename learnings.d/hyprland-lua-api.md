@@ -1,6 +1,6 @@
 # Hyprland's Lua API (0.56)
 
-b2omarchy runs Hyprland 0.56.1 with the **Lua config parser**, which changes
+the Linux machine runs Hyprland 0.56.1 with the **Lua config parser**, which changes
 how `hyprctl` is driven. Most examples online use the older string syntax and
 simply fail.
 

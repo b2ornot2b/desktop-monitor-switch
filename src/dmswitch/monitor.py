@@ -61,11 +61,16 @@ class MonitorSwitcher:
             )
             return False
 
+        # Which flag carries the value depends on the addressing in use:
+        # LG's alternate scheme takes --ddcAlt, standard DDC takes --ddc.
+        # Hardcoding --ddcAlt made the documented "adapting to other hardware"
+        # path impossible to follow.
+        value_flag = "--ddcAlt" if self.config.uses_alt_addressing else "--ddc"
         cmd = [
             self._resolved,
             "set",
             f"--tagID={self.config.tag_id}",
-            f"--ddcAlt={value}",
+            f"{value_flag}={value}",
             f"--vcp={self.config.vcp}",
         ]
         try:
@@ -93,9 +98,9 @@ class MonitorSwitcher:
         return True
 
     def to_remote(self) -> bool:
-        """Show b2omarchy on the shared monitor."""
+        """Show the remote machine on the shared monitor."""
         return self._set_input(self.config.remote_input)
 
     def to_local(self) -> bool:
-        """Show b2umini on the shared monitor."""
+        """Show this Mac on the shared monitor."""
         return self._set_input(self.config.local_input)

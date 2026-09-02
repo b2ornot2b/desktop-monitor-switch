@@ -1,6 +1,8 @@
 # Configuration
 
-Defaults match this setup, so normally nothing needs configuring.
+**The defaults describe the author's hardware, not yours.** The monitor id, DDC
+input values, hostname and shared-display size all need setting before this
+does anything useful.
 
 ## File
 
@@ -20,25 +22,36 @@ Defaults match this setup, so normally nothing needs configuring.
     "vcp": "inputSelectAlt"
   },
   "remote": {
-    "host": "b2omarchy",
+    "host": "linux-host",
     "port": 24810,
     "connect_timeout": 2.0
   },
+  "screen": {
+    "width": 0,
+    "height": 0
+  },
+  "remote_label": "remote",
   "switch_monitor": true,
   "forward_input": true,
+  "start_hidden": false,
   "freeze_local_cursor": false,
   "spare_workspaces": 2,
+  "tile_scale": 1.0,
+  "tile_quality": 90,
+  "tile_format": "jpeg",
   "scroll_divisor": 3.0
 }
 ```
+
 
 ## Monitor
 
 | key | default | meaning |
 |---|---|---|
 | `tag_id` | `2` | BetterDisplay display id. `betterdisplaycli get --identifiers` lists them |
-| `local_input` | `144` | DDC value for HDMI 1 (b2umini) |
-| `remote_input` | `145` | DDC value for HDMI 2 (b2omarchy) |
+| `local_input` | `144` | DDC value for HDMI 1 (the Mac) |
+| `remote_input` | `145` | DDC value for HDMI 2 (the Linux machine) |
+
 | `cli` | `betterdisplaycli` | must be on `PATH`; BetterDisplay must also be *running* |
 | `vcp` | `inputSelectAlt` | symbolic name for LG's alternate addressing |
 
@@ -55,9 +68,29 @@ defaults read pro.betterdisplay.BetterDisplay 'ddcCustomInputSources@Display:2' 
 
 | key | default | meaning |
 |---|---|---|
-| `host` | `b2omarchy` | must resolve from this Mac |
+| `host` | `linux-host` | must resolve from this Mac |
 | `port` | `24810` | both channels share it |
 | `connect_timeout` | `2.0` | seconds |
+
+## Screen
+
+Which display to put the strip on.
+
+| key | default | meaning |
+|---|---|---|
+| `width` | `0` | shared monitor width in points; `0` means the main screen |
+| `height` | `0` | shared monitor height in points |
+
+Matching by size rather than by name, because macOS does not give a stable
+identifier for a display across reconnects. If both your displays are the same
+size, the first match wins - set this to the one you want and check the log
+line `target screen: ...` on startup.
+
+## Labelling
+
+| key | default | meaning |
+|---|---|---|
+| `remote_label` | `remote` | shown in Space titles, e.g. `remote: nvim` |
 
 ## Behaviour
 
@@ -65,6 +98,7 @@ defaults read pro.betterdisplay.BetterDisplay 'ddcCustomInputSources@Display:2' 
 |---|---|---|
 | `switch_monitor` | `true` | set `false` to test forwarding without touching the monitor |
 | `forward_input` | `true` | set `false` to watch Space transitions without ever capturing input |
+| `start_hidden` | `false` | build the strip at launch without switching into it. The LaunchAgent sets this |
 | `freeze_local_cursor` | `false` | see the warning below |
 | `spare_workspaces` | `2` | empty Spaces kept past the last real workspace |
 | `tile_scale` | `1.0` | snapshot size for Space backgrounds, as a fraction of the output |
@@ -85,7 +119,7 @@ only if the pointer is observed drifting, and be aware of the failure mode.
 
 ### `tile_scale`
 
-Each Space shows a snapshot of the b2omarchy workspace it maps to, so Mission
+Each Space shows a snapshot of the Linux machine workspace it maps to, so Mission
 Control shows something recognisable instead of black squares.
 
 Full size by default, because the Space is displayed at the monitor's native
@@ -129,8 +163,20 @@ Flags override the file for that run:
 --no-forward           never capture or forward input
 --host HOST            override the receiver host
 --port PORT            override the receiver port
+--start-hidden         build the strip without switching into it
+--log-file PATH        also write the log here
 --write-config         write current settings and exit
---check                verify receiver, permissions and CLI, then exit
+--check                round-trip the receiver, check permissions and CLI, then exit
+```
+
+`--check` asks the receiver for its workspace list rather than just opening the
+port, so it also catches a receiver that is talking to the wrong Hyprland
+instance:
+
+```
+receiver:      linux-box:24810, monitor HDMI-A-1, workspaces [1, 2]
+input access:  granted
+betterdisplay: /opt/homebrew/bin/betterdisplaycli
 ```
 
 `--no-forward` is the safe way to try changes: it cannot take over the
@@ -145,10 +191,11 @@ keyboard.
 
 ## Adapting to other hardware
 
-- **Screen matching** — `TARGET_SCREEN_SIZE` in `app.py` identifies the shared
-  monitor by size; change it if yours differs.
-- **Monitor name on the Linux side** — the receiver defaults to `HDMI-A-1`;
-  pass `--monitor` to change it.
+- **Screen matching** — set `screen.width` / `screen.height` to your shared
+  monitor's size in points. Left at `0`, the strip goes on the main screen.
+- **Monitor name on the Linux side** — pass `--monitor` to the receiver, or
+  give the installer the output name (`./install.sh HDMI-A-1`). It refuses to
+  guess when several outputs are connected. `hyprctl monitors -j` lists them.
 - **A monitor that is not an LG** — `vcp` and the input values will differ.
   Standard DDC input select is VCP `0x60` with values 17/18 for HDMI 1/2; the
   `inputSelectAlt` form here is specific to LG's alternate addressing.

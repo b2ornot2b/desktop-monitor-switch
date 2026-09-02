@@ -1,4 +1,8 @@
-# ydotool and uinput on Wayland
+# ydotool and uinput
+
+> How this was found by hand. The shipped
+> `linux/systemd/ydotoold.service` now does it for you - follow
+> [QuickStart.md](../QuickStart.md) to install, not the commands here. on Wayland
 
 Injecting input into a Wayland compositor from outside is normally the hard
 part. `uinput` sidesteps it: a virtual kernel input device is indistinguishable
@@ -8,7 +12,7 @@ from real hardware to the compositor, with no portal or DBus involvement.
 ## Setup that actually works
 
 ```bash
-sudo ydotoold --socket-own=1001:992 --socket-perm=0660
+sudo ydotoold --socket-own=$(id -u):$(getent group input | cut -d: -f3) --socket-perm=0660
 ```
 
 - **Numeric uid:gid only.** Names (`b2:input`) fail *silently* — the daemon
@@ -44,7 +48,7 @@ signal if you assumed otherwise.
 
 ## Do not test with CapsLock
 
-b2omarchy's keyboard options are `compose:caps`, so **CapsLock is remapped to
+the Linux machine's keyboard options are `compose:caps`, so **CapsLock is remapped to
 Compose** and can never toggle capsLock state. Testing with it produced a
 convincing false "keyboard injection does not work".
 

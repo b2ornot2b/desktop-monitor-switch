@@ -14,7 +14,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="dmswitch",
         description="Hand the shared monitor and this Mac's keyboard/trackpad to "
-        "b2omarchy when its dedicated Space is active.",
+        "the remote machine when its dedicated Space is active.",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     parser.add_argument(
@@ -116,17 +116,33 @@ def _check(config: Config) -> int:
     """Verify the receiver is reachable and the event tap can be created."""
     import Quartz
 
-    from .transport import EventSender
+    from .remote import ControlClient
 
     ok = True
+    where = f"{config.remote.host}:{config.remote.port}"
 
-    sender = EventSender(config.remote)
-    if sender.connect():
-        print(f"receiver:      reachable at {config.remote.host}:{config.remote.port}")
-        sender.disconnect()
-    else:
-        print(f"receiver:      UNREACHABLE at {config.remote.host}:{config.remote.port}")
+    # A round-trip rather than a bare connect: reaching the port only proves
+    # something is listening. Asking for the workspace list also exercises the
+    # handshake and the receiver's hyprctl path, which is where this actually
+    # tends to break - a receiver talking to the wrong Hyprland instance
+    # answers happily and does nothing useful.
+    client = ControlClient(config.remote)
+    if not client.connect():
+        print(f"receiver:      UNREACHABLE at {where}")
         ok = False
+    else:
+        reply = client.workspaces()
+        if reply.get("ok"):
+            ids = reply.get("workspaces", [])
+            monitor = reply.get("monitor", "?")
+            print(f"receiver:      {where}, monitor {monitor}, workspaces {ids}")
+            if not ids:
+                print("               no workspaces reported - is --monitor correct?")
+                ok = False
+        else:
+            print(f"receiver:      {where} answered, but: {reply.get('error', reply)}")
+            ok = False
+        client.close()
 
     trusted = Quartz.CGPreflightListenEventAccess()
     print(f"input access:  {'granted' if trusted else 'NOT GRANTED'}")

@@ -132,7 +132,7 @@ def test_rapid_swipes_collapse_to_the_last_workspace(client, server):
 
 
 def test_wake_is_sent_before_handing_over_the_monitor(server):
-    """b2omarchy's output sleeps while the Mac owns the monitor."""
+    """the remote machine's output sleeps while the Mac owns the monitor."""
     client = ControlClient(RemoteConfig(host="127.0.0.1", port=server.port))
     client.wake()
     client.close()

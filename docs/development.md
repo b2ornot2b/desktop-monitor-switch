@@ -5,7 +5,7 @@ uv venv && uv pip install -e ".[dev]"
 .venv/bin/python -m pytest
 ```
 
-58 tests, no hardware required — they cover everything that can be checked
+74 tests, no hardware required — they cover everything that can be checked
 without a real event tap or a Linux machine in the loop.
 
 ## What the tests cover
@@ -28,7 +28,7 @@ Fakes exposing `frame()` and `localizedName()` stand in for `NSScreen` fine.
 ## Testing against real hardware
 
 Both machines are live, so this has visible consequences: the monitor switches
-inputs and b2omarchy's workspace changes. Restore state afterwards.
+inputs and the Linux machine's workspace changes. Restore state afterwards.
 
 Prefer closing the loop yourself over asking someone to swipe and report:
 
@@ -41,8 +41,8 @@ for down in (True, False):
 ```
 
 ```bash
-ssh b2omarchy "hyprctl -i <sig> devices -j" | python3 -c "..."   # numLock
-ssh b2omarchy "hyprctl -i <sig> cursorpos"                       # pointer
+ssh linux-box "hyprctl -i <sig> devices -j" | python3 -c "..."   # numLock
+ssh linux-box "hyprctl -i <sig> cursorpos"                       # pointer
 ```
 
 `CGWarpMouseCursorPosition` places the pointer on a chosen display, which is
@@ -66,8 +66,9 @@ Use `--no-forward` for anything not specifically about input capture.
 ## Deploying the receiver
 
 ```bash
-scp linux/dmswitch_receiver.py b2omarchy:~/
-ssh b2omarchy 'pkill -f dmswitch_receiver.py; nohup python3 ~/dmswitch_receiver.py --port 24810 > /tmp/dmswitch_receiver.log 2>&1 &'
+scp linux/dmswitch_receiver.py linux-box:~/
+scp linux/dmswitch_receiver.py linux-box:~/.local/bin/
+ssh linux-box 'systemctl --user restart dmswitch-receiver'
 ```
 
 Stdlib only, deliberately — it can be copied to a machine with nothing
@@ -97,7 +98,7 @@ back.
 - The Mac side has no reboot test equivalent to the Linux one; the
   LaunchAgent is verified by loading it, not by signing out and in
 - The strip resyncs only when you leave it, so a workspace created on
-  b2omarchy while you are inside is unreachable until you leave and return
+  the Linux machine while you are inside is unreachable until you leave and return
 - Workspace 3 is skipped because it lives on a headless output; making the
   numbering contiguous would mean moving it, which would disturb that output
 - No authentication on the wire; fine for a trusted link, not for anything else
