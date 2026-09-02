@@ -22,8 +22,8 @@ The command that works, and the ones that fail silently, are covered in
 `learnings.d/silent-failures.md`. Test by hand:
 
 ```bash
-betterdisplaycli set --tagID=2 --ddcAlt=145 --vcp=inputSelectAlt   # → b2omarchy
-betterdisplaycli set --tagID=2 --ddcAlt=144 --vcp=inputSelectAlt   # → b2umini
+betterdisplaycli set --tagID=2 --ddcAlt=145 --vcp=inputSelectAlt   # → the Linux machine
+betterdisplaycli set --tagID=2 --ddcAlt=144 --vcp=inputSelectAlt   # → the Mac
 ```
 
 If those do nothing, check BetterDisplay is **running** — `betterdisplaycli`
@@ -32,18 +32,18 @@ only messages the running app — and that `tag_id` still matches
 
 ## The monitor switches but the screen is black
 
-b2omarchy's output is asleep. Its HDMI output enters DPMS while the monitor is
+the Linux machine's output is asleep. Its HDMI output enters DPMS while the monitor is
 showing the Mac, so the input switches to a display sending no picture — the
 workspaces are switching correctly underneath.
 
 ```bash
-ssh b2omarchy "hyprctl -i <sig> monitors -j" | grep dpmsStatus
+ssh linux-box "hyprctl -i <sig> monitors -j" | grep dpmsStatus
 ```
 
 The app sends `wake` on engage. If that is failing, the log says so. Note that
 `hl.dsp.dpms` *toggles*, so do not "fix" it by calling it repeatedly.
 
-## Keystrokes do not reach b2omarchy
+## Keystrokes do not reach the Linux machine
 
 Work along the chain:
 
@@ -57,7 +57,7 @@ Work along the chain:
    *when you engage*, not only at shutdown. Connected-then-immediately-
    disconnected at the end is the signature of the backlog bug.
 4. **Is ydotoold alive?** `pgrep -x ydotoold`, and
-   `ls -l /tmp/.ydotool_socket` should show `b2 input`, not `root root`.
+   `ls -l $XDG_RUNTIME_DIR/.ydotool_socket` should show `youruser input`, not `root root`.
 
 Do not test with **CapsLock** — it is remapped to Compose here and can never
 toggle. Use NumLock.

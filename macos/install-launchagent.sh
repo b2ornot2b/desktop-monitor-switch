@@ -5,7 +5,7 @@
 #     ./macos/install-launchagent.sh --uninstall
 #
 # The agent runs with --start-hidden, so signing in builds the strip without
-# switching you into it or handing the monitor to b2omarchy.
+# switching you into it or handing the monitor to this machine.
 
 set -euo pipefail
 
@@ -126,13 +126,16 @@ cat <<EOF
 
   Logs: ${LOG_DIR}/dmswitch.log
 
-  IMPORTANT: macOS grants Accessibility and Input Monitoring per *app*, and
-  the agent now runs from a bundle, so the grants move with it:
+  The agent runs from a bundle so macOS shows it as "dmswitch". Its executable
+  is a symlink to the venv interpreter, and TCC keys its grants to the
+  underlying binary, so an existing grant for:
+
+      ${PYTHON}
+
+  normally continues to apply. If the log says "could not create event tap",
+  grant Accessibility and Input Monitoring to:
 
       ${APP}
 
-  Add that bundle under System Settings > Privacy & Security > Accessibility,
-  and again under Input Monitoring. Until you do, the monitor will still switch
-  but keystrokes will not be forwarded, and the log will say "could not create
-  event tap". Any older entry for .venv/bin/python can be removed.
+  under System Settings > Privacy & Security.
 EOF

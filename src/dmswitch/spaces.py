@@ -1,4 +1,4 @@
-"""A strip of macOS Spaces, one per b2omarchy workspace.
+"""A strip of macOS Spaces, one per the remote machine workspace.
 
 Each workspace on the shared monitor gets its own full-screen window, and a
 full-screen window is its own Space. macOS then places them side by side just
@@ -7,13 +7,13 @@ past the Mac's own Spaces, so the two machines read as one continuous strip:
     [mac 1] [mac 2] ... [mac last] | [ws1] [ws2] [ws3]
 
 Swiping is handled entirely by macOS. All this code does is notice which
-window is on the active Space and tell b2omarchy to match. That is why there
+window is on the active Space and tell the remote machine to match. That is why there
 is no gesture interception anywhere in this project: the system's own Space
 gesture cannot be suppressed by an event tap, so instead of fighting it we
 give it something useful to switch between.
 
 Swiping left off the first strip Space lands on the Mac's own last Space,
-which is exactly the "leave b2omarchy" behaviour, for free.
+which is exactly the "leave the remote machine" behaviour, for free.
 """
 
 from __future__ import annotations
@@ -62,16 +62,19 @@ def plan_workspaces(
     return result
 
 
-def _window_title(workspace_id: int, remote_title: str | None) -> str:
-    """What macOS shows for this Space.
+def _window_title(
+    workspace_id: int, remote_title: str | None, label: str = "remote"
+) -> str:
+    """What is drawn on this Space.
 
     Named after what is actually on the far machine, so the Spaces are
-    distinguishable at a glance rather than all reading the same.
+    distinguishable at a glance rather than all reading the same. ``label``
+    names the remote machine and comes from configuration.
     """
     remote_title = (remote_title or "").strip()
     if remote_title:
-        return f"b2omarchy: {remote_title}"
-    return f"b2omarchy: workspace {workspace_id}"
+        return f"{label}: {remote_title}"
+    return f"{label}: workspace {workspace_id}"
 
 
 def cg_point_in_frame(x: float, y: float, frame, main_height: float) -> bool:
@@ -128,10 +131,11 @@ class StripWindowDelegate(NSObject):
 
 
 class WorkspaceStrip:
-    """Owns the full-screen windows that mirror b2omarchy's workspaces."""
+    """Owns the full-screen windows that mirror the remote machine's workspaces."""
 
-    def __init__(self, screen, on_ready=None):
+    def __init__(self, screen, on_ready=None, label: str = "remote"):
         self.screen = screen
+        self.label = label
         self.on_ready = on_ready
         self.windows: list = []
         self.workspace_ids: list[int] = []
@@ -155,7 +159,10 @@ class WorkspaceStrip:
         self.teardown()
         self.workspace_ids = list(workspace_ids)
         if not self.workspace_ids:
-            log.warning("b2omarchy reported no workspaces; strip is empty")
+            log.error(
+            "the remote reported no workspaces, so the strip is empty and "
+            "nothing will happen. Check the receiver and its --monitor name."
+        )
             if self.on_ready:
                 self.on_ready()
             return
@@ -204,7 +211,7 @@ class WorkspaceStrip:
             self.screen,
         )
         window.setFrame_display_(frame, False)
-        window.setTitle_(_window_title(workspace_id, None))
+        window.setTitle_(_window_title(workspace_id, None, self.label))
         window.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorFullScreenPrimary)
         window.setTitlebarAppearsTransparent_(True)
         window.setBackgroundColor_(AppKit.NSColor.blackColor())
@@ -233,7 +240,7 @@ class WorkspaceStrip:
         # Hence the enormous type. Mission Control shrinks a 3440px-wide Space
         # to a couple of hundred pixels, roughly 17x, so anything at a normal
         # size is unreadable there. This window is never actually looked at
-        # full size - while it is on screen the monitor is showing b2omarchy -
+        # full size - while it is on screen the monitor is showing the remote machine -
         # so the banner costs nothing and is legible where it matters.
         banner_height = frame.size.height * BANNER_HEIGHT_FRACTION
         banner = AppKit.NSView.alloc().initWithFrame_(
@@ -255,7 +262,7 @@ class WorkspaceStrip:
                 0, banner_height * 0.18, frame.size.width, banner_height * 0.64
             )
         )
-        label.setStringValue_(_window_title(workspace_id, None))
+        label.setStringValue_(_window_title(workspace_id, None, self.label))
         label.setAlignment_(AppKit.NSTextAlignmentCenter)
         label.setBezeled_(False)
         label.setDrawsBackground_(False)
@@ -321,11 +328,11 @@ class WorkspaceStrip:
         self.building = False
 
     def set_title(self, workspace_id: int, remote_title: str | None) -> bool:
-        """Rename a Space after whatever b2omarchy is showing on it."""
+        """Rename a Space after whatever the remote machine is showing on it."""
         for window in self.windows:
             identifier = window.identifier()
             if identifier and int(identifier) == workspace_id:
-                title = _window_title(workspace_id, remote_title)
+                title = _window_title(workspace_id, remote_title, self.label)
                 window.setTitle_(title)
                 label = self.labels.get(workspace_id)
                 if label is not None:

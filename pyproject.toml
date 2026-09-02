@@ -3,6 +3,11 @@ name = "dmswitch"
 version = "0.1.0"
 description = "Turn a macOS Space switch into a KVM switch: monitor input + keyboard/trackpad follow the desktop"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
+authors = [{ name = "Blinston S. Fernandes" }]
+keywords = ["kvm", "macos", "hyprland", "wayland", "ddc", "spaces"]
 dependencies = [
     "pyobjc-core>=10.3",
     "pyobjc-framework-Cocoa>=10.3",

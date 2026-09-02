@@ -7,8 +7,8 @@ Guidance for working in this repository.
 `dmswitch` turns switching to a macOS Space into a KVM switch. Two machines
 share one monitor:
 
-- **b2umini** — Mac mini (Apple Silicon, macOS 26), owns the keyboard and trackpad
-- **b2omarchy** — Arch Linux ARM running Hyprland, reachable over Tailscale
+- **the Mac** — Mac mini (Apple Silicon, macOS 26), owns the keyboard and trackpad
+- **the Linux machine** — Arch Linux ARM running Hyprland, reachable over Tailscale
 
 The shared monitor is the **3440×1440 LG** (BetterDisplay `tagID=2`, `HDMI-A-1`
 on the Linux side). A second 5120×1440 display is attached to the Mac only.
@@ -23,16 +23,16 @@ them is what made an earlier version trap the user:
 | which machine the **monitor shows** | which Space is on the shared monitor |
 | which machine **input goes to** | where the **pointer** is |
 
-That separation is what lets someone leave b2omarchy up on the shared monitor
+That separation is what lets someone leave the Linux machine up on the shared monitor
 while carrying on with the Mac on the other display.
 
 ## Architecture in one paragraph
 
-Each b2omarchy workspace gets its own full-screen macOS Space, so the Spaces
+Each the Linux machine workspace gets its own full-screen macOS Space, so the Spaces
 and the workspaces form one continuous strip. macOS handles the swipe; the app
-just notices which of its windows is on the active Space and tells b2omarchy to
+just notices which of its windows is on the active Space and tells the Linux machine to
 match. Input is captured with a CGEventTap and shipped to a small receiver on
-b2omarchy as raw Linux `input_event` records, which it relays into `ydotoold`.
+the Linux machine as raw Linux `input_event` records, which it relays into `ydotoold`.
 
 Gestures are **never** intercepted — see `learnings.d/macos-event-taps.md` for
 why that is not a choice.
@@ -57,7 +57,7 @@ why that is not a choice.
 
 ```bash
 uv venv && uv pip install -e ".[dev]"
-.venv/bin/python -m pytest              # 58 tests, no hardware needed
+.venv/bin/python -m pytest              # 74 tests, no hardware needed
 .venv/bin/python -m dmswitch --check    # receiver, permissions, CLI
 .venv/bin/python -m dmswitch --no-forward -v   # safe: never captures input
 ```
@@ -65,30 +65,30 @@ uv venv && uv pip install -e ".[dev]"
 `--no-forward` is the right way to try changes to Space or monitor logic
 without risking the keyboard.
 
-The receiver and `ydotoold` run as systemd user units on b2omarchy, installed
+The receiver and `ydotoold` run as systemd user units on the Linux machine, installed
 by `linux/install.sh`, and come back with the graphical session:
 
 ```bash
-ssh b2omarchy 'systemctl --user status ydotoold dmswitch-receiver'
+ssh linux-box 'systemctl --user status ydotoold dmswitch-receiver'
 ```
 
 After changing `linux/dmswitch_receiver.py`, redeploy and restart it:
 
 ```bash
-scp linux/dmswitch_receiver.py b2omarchy:~/.local/bin/
-ssh b2omarchy 'systemctl --user restart dmswitch-receiver'
+scp linux/dmswitch_receiver.py linux-box:~/.local/bin/
+ssh linux-box 'systemctl --user restart dmswitch-receiver'
 ```
 
 ## Testing against real hardware
 
 Both machines are live, so tests have visible side effects: the monitor
-switches inputs, b2omarchy's workspace changes. That is fine, but restore state
+switches inputs, the Linux machine's workspace changes. That is fine, but restore state
 afterwards, and prefer driving things yourself over asking the user to swipe —
 a synthetic keystroke of macOS keycode `0x47` maps to `KEY_NUMLOCK`, and
-`hyprctl devices -j` reports b2omarchy's numLock, which gives a complete
+`hyprctl devices -j` reports the Linux machine's numLock, which gives a complete
 end-to-end check with no human in the loop.
 
-Do not test keyboard forwarding with **CapsLock**: b2omarchy maps it to Compose
+Do not test keyboard forwarding with **CapsLock**: the Linux machine maps it to Compose
 (`compose:caps`), so it can never toggle and looks like a failure.
 
 ## Layout
@@ -96,7 +96,7 @@ Do not test keyboard forwarding with **CapsLock**: b2omarchy maps it to Compose
 | path | what |
 |---|---|
 | `src/dmswitch/` | the macOS app |
-| `linux/dmswitch_receiver.py` | the b2omarchy receiver, stdlib only so it can just be copied over |
+| `linux/dmswitch_receiver.py` | the Linux machine receiver, stdlib only so it can just be copied over |
 | `docs/` | architecture, protocol, configuration, operations, troubleshooting |
 | `learnings.d/` | one file per hard-won lesson, indexed by `learnings.md` |
 

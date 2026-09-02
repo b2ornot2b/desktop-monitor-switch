@@ -1,6 +1,6 @@
 """Linux evdev wire format and macOS -> Linux input code translation.
 
-Events are sent to b2omarchy as raw ``struct input_event`` records, which is
+Events are sent to the remote machine as raw ``struct input_event`` records, which is
 exactly what ydotoold reads off its unix datagram socket. Keeping that format
 end to end means the receiver is a relay and never has to interpret anything.
 """

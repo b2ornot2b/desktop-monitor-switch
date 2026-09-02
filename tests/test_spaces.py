@@ -92,7 +92,7 @@ class TestPlanWorkspaces:
         assert plan_workspaces([3, 1, 1], taken=[1, 3], spares=1) == [1, 3, 4]
 
     def test_gaps_below_the_end_are_left_alone(self):
-        # Reusing a gap would renumber the strip relative to b2omarchy.
+        # Reusing a gap would renumber the strip relative to the remote machine.
         from dmswitch.spaces import plan_workspaces
 
         assert plan_workspaces([1, 5], taken=[1, 5], spares=1) == [1, 5, 6]
@@ -144,7 +144,7 @@ class TestCGPointInFrame:
 
 
 class TestWindowTitle:
-    """Spaces are named after what b2omarchy has on them.
+    """Spaces are named after what the remote machine has on them.
 
     All Spaces reading the same makes them indistinguishable in Mission
     Control, which is the whole reason for showing a title at all.
@@ -153,24 +153,32 @@ class TestWindowTitle:
     def test_uses_the_remote_window_title(self):
         from dmswitch.spaces import _window_title
 
-        assert _window_title(1, "b2@b2omarchy:~") == "b2omarchy: b2@b2omarchy:~"
+        assert _window_title(1, "user@host:~", "linux") == "linux: user@host:~"
 
     def test_falls_back_to_the_workspace_number(self):
         from dmswitch.spaces import _window_title
 
-        assert _window_title(3, "") == "b2omarchy: workspace 3"
-        assert _window_title(3, None) == "b2omarchy: workspace 3"
+        assert _window_title(3, "", "linux") == "linux: workspace 3"
+        assert _window_title(3, None, "linux") == "linux: workspace 3"
 
     def test_whitespace_only_titles_are_treated_as_empty(self):
         from dmswitch.spaces import _window_title
 
-        assert _window_title(2, "   ") == "b2omarchy: workspace 2"
+        assert _window_title(2, "   ", "linux") == "linux: workspace 2"
+
+    def test_label_is_configurable_not_hardcoded(self):
+        # The label names whichever machine the user is switching to; baking
+        # in one hostname made every Space read as the author's setup.
+        from dmswitch.spaces import _window_title
+
+        assert _window_title(1, "vim", "workstation") == "workstation: vim"
+        assert _window_title(1, "vim").startswith("remote: ")
 
     def test_title_is_always_prefixed_so_the_machine_is_obvious(self):
         from dmswitch.spaces import _window_title
 
         for title in ("vim", "", None, "a b c"):
-            assert _window_title(1, title).startswith("b2omarchy: ")
+            assert _window_title(1, title, "linux").startswith("linux: ")
 
 
 class TestStripStability:

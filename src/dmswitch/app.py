@@ -1,8 +1,8 @@
-"""The macOS app: a strip of Spaces that mirrors b2omarchy's workspaces.
+"""The macOS app: a strip of Spaces that mirrors the remote machine's workspaces.
 
 Entering any Space in the strip hands the shared monitor and this Mac's
-keyboard and trackpad to b2omarchy. Swiping within the strip switches
-b2omarchy's workspace. Swiping left off the front of the strip lands back on
+keyboard and trackpad to the remote machine. Swiping within the strip switches
+the remote machine's workspace. Swiping left off the front of the strip lands back on
 the Mac's own Spaces, which releases both.
 
 Space membership is read with ``NSWindow.isOnActiveSpace`` alongside
@@ -29,8 +29,7 @@ from .transport import EventSender
 
 log = logging.getLogger(__name__)
 
-# The shared monitor, matched by size. b2omarchy is on this display's other input.
-TARGET_SCREEN_SIZE = (3440, 1440)
+# Fallback when no screen size is configured: use the main display.
 
 # Set by the signal handler, polled on the run loop. See checkForInterrupt_.
 _interrupted = False
@@ -56,15 +55,26 @@ def _build_menu():
     AppKit.NSApp().setMainMenu_(main_menu)
 
 
-def _find_target_screen():
-    """The shared monitor if we can identify it, else the main screen."""
-    for screen in AppKit.NSScreen.screens():
-        frame = screen.frame()
-        if (round(frame.size.width), round(frame.size.height)) == TARGET_SCREEN_SIZE:
-            return screen
-    log.warning(
-        "no %sx%s screen found; falling back to the main screen", *TARGET_SCREEN_SIZE
-    )
+def _find_target_screen(config: Config):
+    """The shared monitor, matched by size, else the main screen.
+
+    Matched by size rather than by display id because ids are not stable
+    across reconnects.
+    """
+    width, height = config.screen.width, config.screen.height
+    if width and height:
+        for screen in AppKit.NSScreen.screens():
+            frame = screen.frame()
+            if (round(frame.size.width), round(frame.size.height)) == (width, height):
+                return screen
+        log.warning(
+            "no %sx%s screen found; falling back to the main screen. Set "
+            "screen.width/height in the config to match your shared monitor.",
+            width,
+            height,
+        )
+    else:
+        log.info("no screen size configured; using the main screen")
     return AppKit.NSScreen.mainScreen()
 
 
@@ -109,7 +119,11 @@ class SwitcherDelegate(NSObject):
     def applicationDidFinishLaunching_(self, notification):
         _build_menu()
         self.capture.install()
-        self.strip = WorkspaceStrip(_find_target_screen(), on_ready=self._strip_ready)
+        self.strip = WorkspaceStrip(
+            _find_target_screen(self.config),
+            on_ready=self._strip_ready,
+            label=self.config.remote_label,
+        )
         self._rebuild_strip()
 
         AppKit.NSWorkspace.sharedWorkspace().notificationCenter().addObserver_selector_name_object_(
@@ -144,11 +158,11 @@ class SwitcherDelegate(NSObject):
     # -- strip management --------------------------------------------------
 
     def _rebuild_strip(self):
-        """Match the strip to whatever workspaces b2omarchy currently has."""
+        """Match the strip to whatever workspaces the remote machine currently has."""
         state = self.control.workspaces()
         if not state.get("ok"):
             log.error(
-                "could not read b2omarchy's workspaces (%s); using a single Space",
+                "could not read the remote machine's workspaces (%s); using a single Space",
                 state.get("error"),
             )
             workspace_ids = [1]
@@ -160,7 +174,7 @@ class SwitcherDelegate(NSObject):
                 spares=self.config.spare_workspaces,
             )
             log.info(
-                "b2omarchy has workspaces %s on %s; strip covers %s",
+                "the remote machine has workspaces %s on %s; strip covers %s",
                 existing,
                 state.get("monitor"),
                 workspace_ids,
@@ -186,7 +200,7 @@ class SwitcherDelegate(NSObject):
 
     @objc.python_method
     def _apply_titles(self, titles: dict):
-        """Name each Space after what b2omarchy has on that workspace."""
+        """Name each Space after what the remote machine has on that workspace."""
         for key, title in (titles or {}).items():
             try:
                 self.strip.set_title(int(key), title)
@@ -197,7 +211,7 @@ class SwitcherDelegate(NSObject):
         self._apply_titles(getattr(self, "_pending_titles", {}))
         if self.config.start_hidden:
             # Creating full-screen Spaces switches to them, so at login this
-            # would dump the user into b2omarchy uninvited. Step back out and
+            # would dump the user into the remote machine uninvited. Step back out and
             # wait to be swiped to.
             log.info("strip built; staying out of the way until you swipe to it")
             self._awaiting_first_exit = True
@@ -209,7 +223,7 @@ class SwitcherDelegate(NSObject):
             return
         # Building leaves us on the last Space created, which would drop the
         # user at the far end of the strip. Start at the front instead, so
-        # entering always means "b2omarchy's first workspace".
+        # entering always means "the remote machine's first workspace".
         if self.strip.windows:
             self.strip.windows[0].makeKeyAndOrderFront_(None)
         self._reevaluate("strip-ready")
@@ -239,8 +253,8 @@ class SwitcherDelegate(NSObject):
         )
 
         # Only the Space matters here. Whether input actually goes to
-        # b2omarchy is decided per event by where the pointer is, so the
-        # monitor can keep showing b2omarchy while this Mac is being used on
+        # the remote machine is decided per event by where the pointer is, so the
+        # monitor can keep showing the remote machine while this Mac is being used on
         # the other display.
         if workspace_id is None:
             if self.engaged:
@@ -258,7 +272,7 @@ class SwitcherDelegate(NSObject):
 
         self.engage()
         if self.engaged and workspace_id != self.current_workspace:
-            log.info("strip Space -> b2omarchy workspace %s", workspace_id)
+            log.info("strip Space -> the remote machine workspace %s", workspace_id)
             self.current_workspace = workspace_id
             self.control.focus_async(workspace_id)
 
@@ -279,18 +293,18 @@ class SwitcherDelegate(NSObject):
         else:
             log.info("input forwarding disabled; not touching the keyboard or trackpad")
 
-        # b2omarchy's output sleeps while the monitor is showing this Mac, so
+        # the remote machine's output sleeps while the monitor is showing this Mac, so
         # wake it before handing the monitor over - otherwise the input
         # switches to a display that is not sending a picture.
         woken = self.control.wake()
         if not woken.get("ok"):
             log.warning(
-                "could not wake b2omarchy's output (%s); the monitor may show nothing",
+                "could not wake the remote machine's output (%s); the monitor may show nothing",
                 woken.get("error"),
             )
 
         if not self.monitor.to_remote():
-            # Do not strand the user looking at b2umini with a dead keyboard.
+            # Do not strand the user looking at this Mac with a dead keyboard.
             log.error("monitor switch failed; backing out of forwarding")
             self.capture.stop()
             return
@@ -319,7 +333,7 @@ class SwitcherDelegate(NSObject):
     def pointerIsOverSharedMonitor(self, location) -> bool:
         """Whether the pointer is on the shared monitor right now.
 
-        Used to decide, per event, whether input belongs to b2omarchy or to
+        Used to decide, per event, whether input belongs to the remote machine or to
         this Mac. Moving the pointer to the other display hands input back
         without disturbing what the shared monitor is showing.
         """

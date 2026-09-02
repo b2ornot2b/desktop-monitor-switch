@@ -56,3 +56,22 @@ def test_switcher_reports_failure_rather_than_raising(monkeypatch, tmp_path):
     switcher = monitor.MonitorSwitcher(MonitorConfig())
     assert switcher.to_remote() is False
     assert switcher.to_local() is False
+
+
+class TestDDCAddressing:
+    """Which flag carries the value depends on the addressing in use.
+
+    Hardcoding --ddcAlt made the documented path for non-LG monitors
+    (standard DDC input select, VCP 0x60) impossible to follow.
+    """
+
+    def test_symbolic_vcp_uses_alt_addressing(self):
+        from dmswitch.config import MonitorConfig
+
+        assert MonitorConfig(vcp="inputSelectAlt").uses_alt_addressing is True
+
+    def test_raw_vcp_code_uses_standard_addressing(self):
+        from dmswitch.config import MonitorConfig
+
+        assert MonitorConfig(vcp="0x60").uses_alt_addressing is False
+        assert MonitorConfig(vcp="0X60").uses_alt_addressing is False

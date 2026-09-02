@@ -16,7 +16,7 @@ injection "does not work on Hyprland". Evidence gathered at the time:
 The conclusion drawn — a genuine capability gap in Hyprland's Wayland stack —
 was written up in detail. It was wrong.
 
-b2omarchy runs **two** Hyprland instances. Selecting one with
+the Linux machine runs **two** Hyprland instances. Selecting one with
 `ls -t /run/user/1001/hypr/ | head -1` picks the *nested* one, whose cursor
 never responds to real input. Injection had been working the entire time. The
 measurement was broken, not the system.
@@ -57,7 +57,7 @@ Testing a KVM switch normally needs a human to type and look. Two tricks remove
 that, which makes iteration far faster and avoids burning the user's attention:
 
 - macOS keycode `0x47` maps to `KEY_NUMLOCK`; `hyprctl devices -j` reports
-  b2omarchy's `numLock`. Post a synthetic key, query the state — a full
+  the Linux machine's `numLock`. Post a synthetic key, query the state — a full
   end-to-end verification of capture, transport, and injection.
 - `CGWarpMouseCursorPosition` plus `hyprctl cursorpos` does the same for the
   pointer, and lets you place the pointer on a chosen display to test the
@@ -66,7 +66,7 @@ that, which makes iteration far faster and avoids burning the user's attention:
 ## Instrument the boundary, not the ends
 
 The single-threaded-receiver bug was invisible from either end: the Mac said
-`sent=True`, b2omarchy's tools all worked when driven directly. What exposed it
+`sent=True`, the Linux machine's tools all worked when driven directly. What exposed it
 was logging on *both* sides of the same moment — the Mac reporting a successful
 send while the receiver's log showed the event connection being accepted only
 at shutdown.

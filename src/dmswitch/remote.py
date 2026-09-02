@@ -1,4 +1,4 @@
-"""Control channel to b2omarchy: query workspaces and switch between them.
+"""Control channel to the remote machine: query workspaces and switch between them.
 
 Separate from the input stream because it is request/response rather than a
 one-way firehose. Both share a port and identify themselves with a handshake.
@@ -107,7 +107,7 @@ class ControlClient:
     def capture(
         self, scale: float = 1.0, quality: int = 90, fmt: str = "jpeg"
     ) -> tuple[bytes | None, str]:
-        """A snapshot of what b2omarchy is showing, plus its window title."""
+        """A snapshot of what the remote machine is showing, plus its window title."""
         response = self.request(
             {"cmd": "capture", "scale": scale, "quality": quality, "format": fmt},
             timeout=20,
@@ -123,7 +123,7 @@ class ControlClient:
             return None, title
 
     def wake(self) -> dict:
-        """Wake b2omarchy's output so the monitor has a signal to show."""
+        """Wake the remote machine's output so the monitor has a signal to show."""
         return self.request({"cmd": "wake"})
 
     # -- asynchronous focus ------------------------------------------------
@@ -138,7 +138,7 @@ class ControlClient:
         self._worker.start()
 
     def focus_async(self, workspace_id: int) -> None:
-        """Ask b2omarchy to switch workspace, without blocking the caller."""
+        """Ask the remote machine to switch workspace, without blocking the caller."""
         self.start_worker()
         self._queue.put(workspace_id)
 
@@ -164,6 +164,7 @@ class ControlClient:
             # If several swipes queued up, only the last one matters: walking
             # through every workspace in between would be visible and slow.
             latest = item
+            deferred: list = []
             while True:
                 try:
                     nxt = self._queue.get_nowait()
@@ -173,14 +174,21 @@ class ControlClient:
                     self._queue.put(None)
                     break
                 if isinstance(nxt, tuple):
+                    # A queued capture: keep it for the next loop rather than
+                    # dropping it, or tiles silently go missing whenever one
+                    # lands behind a burst of swipes.
+                    deferred.append(nxt)
                     continue
                 latest = nxt
+
+            for pending in deferred:
+                self._queue.put(pending)
 
             response = self.request({"cmd": "focus", "id": latest})
             if not response.get("ok"):
                 log.error("workspace focus failed: %s", response.get("error"))
                 continue
-            log.info("b2omarchy now on workspace %s", response.get("active"))
+            log.info("the remote machine now on workspace %s", response.get("active"))
             # Let the compositor finish drawing before photographing it.
             time.sleep(0.5)
             self._do_capture(latest)

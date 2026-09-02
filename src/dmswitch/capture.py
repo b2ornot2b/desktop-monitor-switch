@@ -1,7 +1,7 @@
-"""Captures keyboard and pointer input on macOS and forwards it to b2omarchy.
+"""Captures keyboard and pointer input on macOS and forwards it to the remote machine.
 
 Uses an active CGEventTap, which both observes events and swallows them, so a
-keystroke goes to b2omarchy instead of to whatever is focused locally. This
+keystroke goes to the remote machine instead of to whatever is focused locally. This
 needs Accessibility permission for whichever binary hosts the process.
 
 Deliberately *not* captured: swipe and other gesture events. They stay with
@@ -195,7 +195,7 @@ class InputCapture:
 
         # Pointer motion is forwarded but deliberately *not* suppressed: the
         # local cursor has to keep moving so it can leave the shared monitor
-        # and reach the other display. The shared monitor is showing b2omarchy
+        # and reach the other display. The shared monitor is showing the remote machine
         # anyway, so the local cursor is invisible while it is over there.
         if event_type in _POINTER_MOTION:
             return event

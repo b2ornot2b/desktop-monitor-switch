@@ -5,7 +5,7 @@ with a four-byte handshake sent immediately after connecting.
 
 | handshake | channel |
 |---|---|
-| `EVT\n` | input events, one way, Mac → b2omarchy |
+| `EVT\n` | input events, one way, Mac → the Linux machine |
 | `CTL\n` | control, request/response, newline-delimited JSON |
 
 The receiver serves connections **concurrently**, one thread each. This is not
@@ -97,6 +97,22 @@ ignores its `on` argument, so calling it unconditionally would blank the screen
 on every second engage. The receiver reads `dpmsStatus` first and only toggles
 when the output is genuinely asleep.
 
+### `capture`
+
+```json
+→ {"cmd": "capture", "scale": 1.0, "quality": 90, "format": "jpeg"}
+← {"ok": true, "format": "jpeg", "bytes": 765084, "workspace": 1,
+   "title": "user@host:~", "image": "<base64>"}
+```
+
+A snapshot of whatever the shared monitor is currently showing, used for the
+Space backgrounds, plus that workspace's window title. `scale` and `quality`
+are clamped server-side.
+
+**This is an unauthenticated screen-capture endpoint**: any client that can
+open the port and send `CTL\n` can read the screen. See the security note
+below.
+
 ### `ping`
 
 ```json
@@ -112,7 +128,7 @@ Every response carries `ok`; failures add `error` with a human-readable reason.
   and releases them on a clean disconnect.
 - **Receiver**: tracks pressed keys per connection and releases them if the
   connection drops for any reason — crash, sleep, network loss. Without this,
-  b2omarchy is left with a stuck modifier and no keyboard of its own to clear
+  the Linux machine is left with a stuck modifier and no keyboard of its own to clear
   it.
 - **Focus requests** are coalesced: if several swipes queue up faster than the
   network, only the destination is sent rather than walking through every
@@ -120,6 +136,19 @@ Every response carries `ok`; failures add `error` with a human-readable reason.
 
 ## Security
 
-None. There is no authentication, and input events are sent in clear text. It
-is intended for a trusted private network — here, a Tailscale link between two
-machines on one desk. Do not expose port 24810 more widely.
+**None.** There is no authentication and no encryption on either channel.
+
+Anyone who can reach the port can send `EVT\n` and inject arbitrary keystrokes
+into the desktop — remote code execution in practice — or send `CTL\n` and
+read the screen with `capture`. Keystrokes and screenshots both cross the
+network in clear text.
+
+The receiver binds all interfaces by default and logs a warning when it does.
+Bind a single trusted address instead:
+
+```bash
+dmswitch_receiver.py --host 100.x.y.z
+```
+
+Intended only for a trusted private link, such as a VPN between two machines on
+one desk. Do not expose the port more widely.

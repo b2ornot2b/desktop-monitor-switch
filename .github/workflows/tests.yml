@@ -1,0 +1,30 @@
+name: tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test:
+    # The suite is hardware-free by design, so it runs on any macOS image.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install
+        run: uv venv && uv pip install -e ".[dev]"
+
+      - name: Test
+        run: .venv/bin/python -m pytest -q
+
+      - name: Shell scripts parse
+        run: |
+          bash -n linux/install.sh
+          bash -n macos/install-launchagent.sh
+          bash -n macos/make-app-bundle.sh
+
+      - name: Receiver parses under the Python Linux ships
+        run: .venv/bin/python -m py_compile linux/dmswitch_receiver.py

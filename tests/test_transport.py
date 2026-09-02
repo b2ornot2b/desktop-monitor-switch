@@ -1,6 +1,6 @@
 """Tests for the sender, especially the held-key bookkeeping.
 
-The stuck-key case is the one that actually hurts in practice: b2omarchy has no
+The stuck-key case is the one that actually hurts in practice: the remote machine has no
 keyboard of its own, so a modifier left held down there is genuinely hard to
 recover from.
 """

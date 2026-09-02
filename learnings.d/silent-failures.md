@@ -33,7 +33,7 @@ because wrong commands returned success. The hardware was fine the entire time.
 
 ```bash
 sudo ydotoold --socket-own=b2:input --socket-perm=0660   # silently ineffective
-sudo ydotoold --socket-own=1001:992 --socket-perm=0660   # works
+sudo ydotoold --socket-own=$(id -u):$(getent group input | cut -d: -f3) --socket-perm=0660   # works
 ```
 
 With names, the daemon starts, prints nothing, and leaves the socket

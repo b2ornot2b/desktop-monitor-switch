@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Receives input events and workspace commands from b2umini.
+"""Receives input events and workspace commands from the Mac.
 
 Two kinds of client connect to the same port and say which they are with a
 four byte handshake:
@@ -201,13 +201,18 @@ class Hyprland:
         if state is True:
             return {"ok": True, "dpms": True, "changed": False}
 
-        self._run(["dispatch", "hl.dsp.dpms({on=true})"])
-        state = self.dpms_on()
-        if state is not True:
-            # One retry: the toggle can race with the output coming back after
-            # the monitor switches its input.
-            self._run(["dispatch", "hl.dsp.dpms({on=true})"])
+        # Newer Hyprland uses the Lua dispatcher API; older builds take the
+        # classic string form. Without the fallback, wake always fails on a
+        # classic-parser Hyprland and the monitor is handed over to a sleeping
+        # output - a black screen every time, with only a log line to explain.
+        for args in (
+            ["dispatch", "hl.dsp.dpms({on=true})"],
+            ["dispatch", "dpms", "on"],
+        ):
+            self._run(args, quiet=True)
             state = self.dpms_on()
+            if state is True:
+                break
 
         return {
             "ok": state is True,
@@ -455,10 +460,15 @@ def dispatch_control(line: bytes, hypr: Hyprland) -> dict:
         log.info("focusing workspace %s", workspace_id)
         return hypr.focus(workspace_id)
     if command == "capture":
+        # Clamped: these come straight off the wire, and an unbounded scale
+        # would have the receiver allocate an enormous image on request.
+        try:
+            scale = min(max(float(request.get("scale", 1.0)), 0.01), 1.0)
+            quality = min(max(int(request.get("quality", 90)), 1), 100)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "scale and quality must be numbers"}
         result = hypr.capture(
-            scale=request.get("scale", 1.0),
-            quality=request.get("quality", 90),
-            fmt=request.get("format", "jpeg"),
+            scale=scale, quality=quality, fmt=request.get("format", "jpeg")
         )
         if not result.get("ok"):
             log.debug("capture failed: %s", result.get("error"))
@@ -496,6 +506,13 @@ def serve(host: str, port: int, socket_path: str, monitor: str) -> int:
     listener.bind((host, port))
     listener.listen(4)
     log.info("listening on %s:%s (monitor %s)", host, port, monitor)
+    if host in ("0.0.0.0", "::"):
+        log.warning(
+            "listening on every interface with no authentication: anyone who can "
+            "reach %s can inject keystrokes and capture the screen. Pass --host "
+            "to bind a single trusted address.",
+            port,
+        )
 
     def serve_connection(conn: socket.socket, addr) -> None:
         try:
@@ -540,7 +557,14 @@ def serve(host: str, port: int, socket_path: str, monitor: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--host", default="0.0.0.0", help="bind address")
+    parser.add_argument(
+        "--host",
+        default="0.0.0.0",
+        help="bind address. This service is UNAUTHENTICATED: anyone who can "
+        "reach it can inject keystrokes and read screenshots. Bind it to a "
+        "single trusted interface (e.g. your VPN address) rather than leaving "
+        "it on every interface.",
+    )
     parser.add_argument("--port", type=int, default=24810, help="listen port")
     parser.add_argument(
         "--ydotool-socket", default=_default_ydotool_socket(), help="ydotoold socket path"
