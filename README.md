@@ -4,6 +4,22 @@ Two machines, one monitor. Swipe to a macOS Space and the monitor switches its
 input to the Linux box while your Mac's keyboard and trackpad start driving it.
 Swipe back and everything returns.
 
+![Mission Control showing Mac Spaces followed by one Space per Hyprland workspace](docs/images/mission-control-strip.png)
+
+Mission Control on the shared monitor. The first two are ordinary macOS Spaces;
+the rest are one Space per Hyprland workspace on the Linux box, named after the
+window that workspace is showing. The thumbnails are live screenshots of that
+machine, so Mission Control shows you both computers at once.
+
+![A remote workspace filling a macOS Space, titled with the remote window](docs/images/space-fullscreen.jpg)
+
+One of those Spaces full-screen: a title bar naming the remote window, over
+that workspace as it last looked. Swipe in and the monitor changes input while
+your keyboard and trackpad start driving the Linux machine — swipe out and it
+all comes back.
+
+## How it fits together
+
 ```
    Mac (macOS)                                  Linux box (Hyprland)
    ┌──────────────────────────┐   TCP :24810    ┌──────────────────────────┐
@@ -18,7 +34,8 @@ Swipe back and everything returns.
         shared monitor  ── input 1: Mac · input 2: Linux box
 ```
 
-The two machines' desktops become one continuous strip:
+The two machines' desktops sit in one continuous strip, so the swipe you
+already use to change Space is the whole interface:
 
 ```
 [mac 1] [mac 2] … [mac last] │ [ws1] [ws2] [ws3]
